@@ -1,0 +1,11 @@
+streamlit>=1.35
+pandas>=2.0
+numpy>=1.24
+requests>=2.31
+scipy>=1.11
+matplotlib>=3.8
+yfinance>=0.2.40
+
+# === New tab dependencies (2026-07) ===
+qis>=4.1.5  # Hudson & Thames Quantitative Investment Strategies (Tab 9: QIS Performance)
+vanilla_option_pricers>=1.2.2  # Numba-accelerated BSM + Bachelier (Tab 11: Pricing Lab)
