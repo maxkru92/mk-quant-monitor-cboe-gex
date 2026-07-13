@@ -941,6 +941,8 @@ ASSET_VOLA_MAP = {
 
 def chart_gex_profile(crash_profile, spot, zero_gamma):
     fig, ax = plt.subplots(figsize=(12, 5))
+    if crash_profile is None:
+        crash_profile = []
     df = pd.DataFrame(crash_profile)
     if df.empty or "spot_pct" not in df.columns or "gex_plus" not in df.columns:
         return fig
@@ -963,6 +965,8 @@ def chart_gex_profile(crash_profile, spot, zero_gamma):
 
 def chart_oi_by_strike(records, spot):
     fig, ax = plt.subplots(figsize=(14, 5))
+    if records is None:
+        records = []
     df = pd.DataFrame(records)
     if df.empty or "strike" not in df.columns:
         return fig
@@ -985,6 +989,8 @@ def chart_oi_by_strike(records, spot):
 
 def chart_gex_by_strike(records, spot):
     fig, ax = plt.subplots(figsize=(14, 5))
+    if records is None:
+        records = []
     df = pd.DataFrame(records)
     if df.empty or "strike" not in df.columns:
         return fig
@@ -1013,6 +1019,8 @@ def chart_gex_by_strike(records, spot):
 
 def chart_iv_skew(records, spot):
     fig, ax = plt.subplots(figsize=(12, 5))
+    if records is None:
+        records = []
     df = pd.DataFrame(records)
     if df.empty or "strike" not in df.columns:
         return fig
@@ -1035,6 +1043,8 @@ def chart_iv_skew(records, spot):
 
 def chart_vol_smile(records, spot, expiry=None):
     fig, ax = plt.subplots(figsize=(12, 5))
+    if records is None:
+        records = []
     df = pd.DataFrame(records)
     if df.empty or "strike" not in df.columns:
         return fig
@@ -1232,6 +1242,8 @@ def chart_bl_forecast(fc_1d, fc_1w):
 def chart_pc_ratios(records):
     """Put/Call OI and Volume Ratios by Expiry."""
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 4))
+    if records is None:
+        records = []
     df = pd.DataFrame(records)
     if not df.empty and "expiry" in df.columns and "oi_call" in df.columns and "oi_put" in df.columns:
         by_exp = df.groupby("expiry").agg({"oi_call":"sum","oi_put":"sum"}).reset_index()
