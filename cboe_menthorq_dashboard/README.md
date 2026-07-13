@@ -28,8 +28,14 @@ streamlit run app.py
 
 1. Push this folder to a GitHub repository.
 2. Go to [share.streamlit.io](https://share.streamlit.io/).
-3. Create a new app, select the repo and `app.py`.
-4. Deploy.
+3. Sign in with GitHub.
+4. Click **New app**.
+5. Select repository `maxkru92/Trading-Suite-Light-HF-Edition`, branch `streamlit-cloud`.
+6. Set **Main file path** to `cboe_menthorq_dashboard/app.py`.
+7. Choose an app URL (e.g. `cboe-menthorq-dashboard`).
+8. Click **Deploy**.
+
+The app will install dependencies and start. First deploy may take 2–5 minutes.
 
 ## Example tickers
 
