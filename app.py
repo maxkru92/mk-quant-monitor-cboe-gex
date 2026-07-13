@@ -76,53 +76,6 @@ def cboe_fetch_spx_chain():
     raw = _cboe_fetch_chain("SPX")
     return _cboe_parse_chain(raw) if raw else None
 
-
-
-# =============================================================================
-# OPTIONAL 3RD-PARTY MODULE IMPORTS (defensive - tolerate absence on Py 3.9)
-# =============================================================================
-# qis 4.x requires Python 3.10+ (uses `Literal[...]` pipe syntax). The HF Space
-# Dockerfile uses python:3.11-slim so qis works in production, but the local
-# venv is Python 3.9 where qis fails to import. We wrap in try/except so the
-# app still loads locally (with a fallback) and uses full qis on the Space.
-_QIS_AVAILABLE = False
-try:
-    import qis  # noqa: F401
-    _QIS_AVAILABLE = True
-except Exception:
-    pass
-
-# rbergomi ships without setup.py / pyproject.toml, so `pip install rbergomi`
-# fails. Workaround: load the module file directly with importlib after adding
-# the rbergomi/ subdir to sys.path (the inner rbergomi.py does `from utils
-# import *` which only resolves if the *inner* dir is on sys.path).
-_RBERGOMI_AVAILABLE = False
-_rBergomi = None
-try:
-    _RB_PKG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                "assets", "modules", "rbergomi_local",
-                                "rough_bergomi-master", "rbergomi")
-    if os.path.isdir(_RB_PKG_DIR):
-        sys.path.insert(0, _RB_PKG_DIR)
-        _spec = importlib.util.spec_from_file_location("rbergomi", os.path.join(_RB_PKG_DIR, "rbergomi.py"))
-        _mod = importlib.util.module_from_spec(_spec)
-        sys.modules["rbergomi"] = _mod
-        _spec.loader.exec_module(_mod)
-        _rBergomi = _mod.rBergomi
-        _RBERGOMI_AVAILABLE = True
-except Exception:
-    pass
-
-# vanilla_option_pricers v1.2.2 (Numba-accelerated BSM + Bachelier) installs
-# cleanly via pip. Module: vanilla_option_pricers.black_scholes.
-_VOP_AVAILABLE = False
-_compute_bsm_vanilla_price = None
-try:
-    from vanilla_option_pricers.black_scholes import compute_bsm_vanilla_price as _compute_bsm_vanilla_price
-    _VOP_AVAILABLE = True
-except Exception:
-    pass
-
 # -- GEX Calculator --
 def _safe_float(v, default=0.0):
     try:
@@ -136,16 +89,6 @@ def _safe_int(v, default=0):
         if v is None: return default
         return int(float(v))
     except: return default
-
-def _dte_from_record(rec):
-    """Days-to-expiry from a CBOE options record. CBOE records carry `expiry`
-    (YYYY-MM-DD string) not `dte` (int). Returns max(1, ...) so BSM never gets
-    ttm=0. Falls back to 30 days if the expiry string is missing/unparseable.
-    """
-    try:
-        return max(1, (pd.to_datetime(rec.get("expiry")) - pd.Timestamp.now()).days)
-    except Exception:
-        return 30
 
 def compute_gex_plus(records, spot):
     if not records or not spot or spot <= 0: return 0.0
@@ -686,7 +629,7 @@ def compute_cross_asset_vol(vix_data_dict):
 
     df = pd.DataFrame(dfs)
     # Compute returns
-    returns = df.pct_change(fill_method=None).dropna()
+    returns = df.pct_change().dropna()
     corr = returns.corr() if len(returns) > 5 else pd.DataFrame()
 
     # Current dispersion (cross-sectional vol of vols)
@@ -789,7 +732,7 @@ def fetch_yahoo():
             if name not in out:
                 try:
                     hist = yf.Ticker(sym).history(period="6mo")
-                    if hist is not None and len(hist) > 0:
+                    if hist is not None and not hist.empty and "Close" in hist.columns:
                         out[name] = hist[["Close"]].dropna()
                 except: pass
     except ImportError: pass
@@ -828,25 +771,17 @@ def fetch_cboe_spx_chain():
             })
         merged = {}
         for r in normalized:
-            # CRITICAL: key by (strike, expiry) — do NOT collapse multiple expiries into
-            # one row per strike, otherwise cumulative GEX / OI is massively under-counted.
-            k = (r["strike"], r["expiry"])
+            k = r["strike"]
             if k not in merged:
                 merged[k] = r.copy()
             else:
-                # Order-independent merge: later arrival always overwrites for call/put
-                # fields (they are distinct in each leg, so no information loss).
                 for key in ["oi_call","oi_put","iv_call","iv_put","delta_call","delta_put",
                            "gamma_call","gamma_put","theta_call","theta_put",
                            "vega_call","vega_put","vanna_call","vanna_put",
                            "bid_call","bid_put","ask_call","ask_put"]:
-                    if r.get(key, 0) != 0:
+                    if r[key] != 0:
                         merged[k][key] = r[key]
-        records_out = []
-        for rec in merged.values():
-            rec["expiry"] = rec.get("expiry", "") or ""
-            records_out.append(rec)
-        return {"spot": spot, "records": records_out, "expirations": expirations,
+        return {"spot": spot, "records": list(merged.values()), "expirations": expirations,
                 "source": "cboe_live", "timestamp": datetime.utcnow().isoformat()}
     return None
 
@@ -1004,44 +939,13 @@ ASSET_VOLA_MAP = {
 # MATPLOTLIB CHARTS
 # =============================================================================
 
-def _empty_chain_figure(msg="No options data available", n_axes=1, figsize=(12, 5), layout=None):
-    """Return a styled placeholder figure when an options chain is empty.
-
-    Used by chart_oi_by_strike, chart_gex_by_strike, chart_iv_skew,
-    chart_vol_smile, chart_gex_vex_vgr, chart_pc_ratios to short-circuit
-    on empty / malformed records instead of KeyError'ing in matplotlib.
-
-    Args:
-        msg:       Message displayed in each axis.
-        n_axes:    Number of axes (1 or 2). Kept for backward compatibility.
-        figsize:   Figure size (width, height) in inches.
-        layout:    Optional (rows, cols) override. Defaults to (n_axes, 1)
-                   which matches the historical chart_gex_vex_vgr layout
-                   (vertically stacked). Pass layout=(1, 2) for
-                   chart_pc_ratios' side-by-side layout.
-    """
-    if layout is None:
-        layout = (n_axes, 1)
-    rows, cols = layout
-
-    if rows * cols == 1:
-        fig, ax = plt.subplots(figsize=figsize)
-        axes = [ax]
-    else:
-        # Only share x-axis when axes are stacked vertically (rows > 1, cols == 1).
-        # Side-by-side layouts (1, 2) keep independent x-axes.
-        sharex = (rows > 1 and cols == 1)
-        fig, axes_arr = plt.subplots(rows, cols, figsize=figsize, sharex=sharex)
-        axes = np.atleast_1d(axes_arr).flatten().tolist()
-
-    for ax in axes:
-        ax.text(0.5, 0.5, msg, ha='center', va='center', transform=ax.transAxes, fontsize=12, color="#8899aa")
-        ax.set_axis_off()
-    return fig
-
 def chart_gex_profile(crash_profile, spot, zero_gamma):
     fig, ax = plt.subplots(figsize=(12, 5))
+    if not crash_profile:
+        return fig
     df = pd.DataFrame(crash_profile)
+    if "spot_pct" not in df.columns or "gex_plus" not in df.columns:
+        return fig
     ax.fill_between(df["spot_pct"], df["gex_plus"], 0, where=(df["gex_plus"]>=0).values, alpha=0.25, color="#00ff88", label="Long Gamma")
     ax.fill_between(df["spot_pct"], df["gex_plus"], 0, where=(df["gex_plus"]<0).values, alpha=0.25, color="#ff4444", label="Short Gamma")
     ax.plot(df["spot_pct"], df["gex_plus"], color="#00d4ff", linewidth=1.8)
@@ -1060,18 +964,19 @@ def chart_gex_profile(crash_profile, spot, zero_gamma):
     return fig
 
 def chart_oi_by_strike(records, spot):
-    if not records:
-        return _empty_chain_figure("No options data available", n_axes=1, figsize=(14, 5))
-    df = pd.DataFrame(records).sort_values("strike")
-    if df.empty or "strike" not in df.columns:
-        return _empty_chain_figure("Empty options data", n_axes=1, figsize=(14, 5))
     fig, ax = plt.subplots(figsize=(14, 5))
+    if not records:
+        return fig
+    df = pd.DataFrame(records)
+    if "strike" not in df.columns:
+        return fig
+    df = df.sort_values("strike")
     strikes = df["strike"].values
     width = (strikes[1]-strikes[0])*0.35 if len(strikes)>1 else 5
-    oi_c = df.get("oi_call", pd.Series(0, index=df.index)).values
-    oi_p = df.get("oi_put", pd.Series(0, index=df.index)).values
-    ax.bar(strikes - width/2, oi_c, width=width, color="#00ff88", alpha=0.7, label="Call OI")
-    ax.bar(strikes + width/2, -oi_p, width=width, color="#ff4444", alpha=0.7, label="Put OI")
+    oi_call = df.get("oi_call", pd.Series(0, index=df.index)).values
+    oi_put = df.get("oi_put", pd.Series(0, index=df.index)).values
+    ax.bar(strikes - width/2, oi_call, width=width, color="#00ff88", alpha=0.7, label="Call OI")
+    ax.bar(strikes + width/2, -oi_put, width=width, color="#ff4444", alpha=0.7, label="Put OI")
     ax.axvline(spot, color="#ffaa00", linewidth=1.5, linestyle="--", label=f"Spot: {spot:,.0f}")
     ax.set_xlabel("Strike", fontsize=9, fontfamily="sans-serif")
     ax.set_ylabel("Open Interest", fontsize=9, fontfamily="sans-serif")
@@ -1083,12 +988,13 @@ def chart_oi_by_strike(records, spot):
     return fig
 
 def chart_gex_by_strike(records, spot):
-    if not records:
-        return _empty_chain_figure("No options data available", n_axes=1, figsize=(14, 5))
-    df = pd.DataFrame(records).sort_values("strike")
-    if df.empty or "strike" not in df.columns:
-        return _empty_chain_figure("Empty options data", n_axes=1, figsize=(14, 5))
     fig, ax = plt.subplots(figsize=(14, 5))
+    if not records:
+        return fig
+    df = pd.DataFrame(records)
+    if "strike" not in df.columns:
+        return fig
+    df = df.sort_values("strike")
     strikes = df["strike"].values
     g_c = df.get("gamma_call", pd.Series(0, index=df.index)).values
     g_p = df.get("gamma_put", pd.Series(0, index=df.index)).values
@@ -1112,18 +1018,19 @@ def chart_gex_by_strike(records, spot):
     return fig
 
 def chart_iv_skew(records, spot):
-    if not records:
-        return _empty_chain_figure("No options data available", n_axes=1, figsize=(12, 5))
-    df = pd.DataFrame(records).sort_values("strike")
-    if df.empty or "strike" not in df.columns:
-        return _empty_chain_figure("Empty options data", n_axes=1, figsize=(12, 5))
     fig, ax = plt.subplots(figsize=(12, 5))
+    if not records:
+        return fig
+    df = pd.DataFrame(records)
+    if "strike" not in df.columns:
+        return fig
+    df = df.sort_values("strike")
     moneyness = (df["strike"] / spot - 1) * 100
     iv_c = df.get("iv_call", pd.Series(0, index=df.index)).values
     iv_p = df.get("iv_put", pd.Series(0, index=df.index)).values
     ax.plot(moneyness, iv_c*100, color="#00d4ff", linewidth=1.8, label="Call IV", marker="o", markersize=2.5)
     ax.plot(moneyness, iv_p*100, color="#ff6600", linewidth=1.8, label="Put IV", marker="o", markersize=2.5)
-    ax.fill_between(moneyness, df["iv_call"].values*100, df["iv_put"].values*100, alpha=0.08, color="#00d4ff")
+    ax.fill_between(moneyness, iv_c*100, iv_p*100, alpha=0.08, color="#00d4ff")
     ax.axvline(0, color="#ffaa00", linewidth=1.2, linestyle="--", label="ATM")
     ax.set_xlabel("Moneyness (%)", fontsize=9, fontfamily="sans-serif")
     ax.set_ylabel("Implied Volatility (%)", fontsize=9, fontfamily="sans-serif")
@@ -1135,14 +1042,15 @@ def chart_iv_skew(records, spot):
     return fig
 
 def chart_vol_smile(records, spot, expiry=None):
-    if not records:
-        return _empty_chain_figure("No options data available", n_axes=1, figsize=(12, 5))
-    df = pd.DataFrame(records).sort_values("strike")
-    if df.empty or "strike" not in df.columns:
-        return _empty_chain_figure("Empty options data", n_axes=1, figsize=(12, 5))
     fig, ax = plt.subplots(figsize=(12, 5))
-    if expiry and "expiry" in df.columns:
-        df = df[df["expiry"] == expiry]
+    if not records:
+        return fig
+    df = pd.DataFrame(records)
+    if "strike" not in df.columns:
+        return fig
+    df = df.sort_values("strike")
+    if expiry:
+        df = df[df.get("expiry","") == expiry] if "expiry" in df.columns else df
     iv_c = df.get("iv_call", pd.Series(0, index=df.index)).values
     iv_p = df.get("iv_put", pd.Series(0, index=df.index)).values
     ax.plot(df["strike"], iv_c*100, color="#00d4ff", linewidth=1.8, label="Call IV", marker="o", markersize=3)
@@ -1170,7 +1078,8 @@ def chart_heatmap(heatmap_data):
     ax.set_title("GEX+ Heatmap -- Spot Move vs IV Shock (Normalized)", fontsize=11, fontweight="bold", pad=12, fontfamily="sans-serif")
     cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
     cbar.set_label("Normalized GEX+", fontsize=8, fontfamily="sans-serif")
-    cbar.ax.yaxis.set_tick_params(labelcolor='#8899aa', color='#8899aa')
+    cbar.ax.yaxis.set_tick_params(color='#8899aa')
+    plt.setp(cbar.ax.yaxis.get_ticklabels(), color='#8899aa')
     ax.grid(True, alpha=0.15)
     plt.tight_layout()
     return fig
@@ -1331,27 +1240,22 @@ def chart_bl_forecast(fc_1d, fc_1w):
     return fig
 
 def chart_pc_ratios(records):
-    """Put/Call OI and Volume Ratios by Expiry. Tolerates empty / missing-key input."""
-    if not records:
-        return _empty_chain_figure("No options data available", n_axes=2, figsize=(14, 4), layout=(1, 2))
-    df = pd.DataFrame(records)
-    if df.empty or "expiry" not in df.columns:
-        return _empty_chain_figure("Empty options data (no expiry column)", n_axes=2, figsize=(14, 4), layout=(1, 2))
-    if "oi_call" not in df.columns or "oi_put" not in df.columns:
-        return _empty_chain_figure("Missing oi_call / oi_put columns", n_axes=2, figsize=(14, 4), layout=(1, 2))
+    """Put/Call OI and Volume Ratios by Expiry."""
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 4))
-    by_exp = df.groupby("expiry").agg({"oi_call":"sum","oi_put":"sum"}).reset_index()
-    by_exp["pc_oi"] = by_exp["oi_put"] / by_exp["oi_call"].replace(0,1)
-    by_exp = by_exp.sort_values("expiry")
-    colors = ["#ff4444" if v > 1 else "#00ff88" for v in by_exp["pc_oi"]]
-    ax1.bar(range(len(by_exp)), by_exp["pc_oi"], color=colors, alpha=0.8)
-    ax1.set_xticks(range(len(by_exp)))
-    ax1.set_xticklabels(by_exp["expiry"], rotation=45, ha="right", fontsize=8)
-    ax1.axhline(1, color="#ffaa00", linewidth=1, linestyle="--", label="P/C = 1")
-    ax1.set_ylabel("Put/Call OI Ratio", fontsize=9, fontfamily="sans-serif")
-    ax1.set_title("Put/Call OI Ratio by Expiry", fontsize=11, fontweight="bold", fontfamily="sans-serif")
-    ax1.legend(fontsize=8)
-    ax1.grid(True, alpha=0.3, axis="y")
+    df = pd.DataFrame(records)
+    if not df.empty and "expiry" in df.columns and "oi_call" in df.columns and "oi_put" in df.columns:
+        by_exp = df.groupby("expiry").agg({"oi_call":"sum","oi_put":"sum"}).reset_index()
+        by_exp["pc_oi"] = by_exp["oi_put"] / by_exp["oi_call"].replace(0,1)
+        by_exp = by_exp.sort_values("expiry")
+        colors = ["#ff4444" if v > 1 else "#00ff88" for v in by_exp["pc_oi"]]
+        ax1.bar(range(len(by_exp)), by_exp["pc_oi"], color=colors, alpha=0.8)
+        ax1.set_xticks(range(len(by_exp)))
+        ax1.set_xticklabels(by_exp["expiry"], rotation=45, ha="right", fontsize=8)
+        ax1.axhline(1, color="#ffaa00", linewidth=1, linestyle="--", label="P/C = 1")
+        ax1.set_ylabel("Put/Call OI Ratio", fontsize=9, fontfamily="sans-serif")
+        ax1.set_title("Put/Call OI Ratio by Expiry", fontsize=11, fontweight="bold", fontfamily="sans-serif")
+        ax1.legend(fontsize=8)
+        ax1.grid(True, alpha=0.3, axis="y")
     plt.tight_layout()
     return fig
 
@@ -1361,11 +1265,7 @@ def chart_pc_ratios(records):
 # =============================================================================
 
 def chart_vvix_gauge(vvix_val, vvix_pct):
-    """VVIX gauge showing current level and percentile. Tolerates None values."""
-    if vvix_val is None:
-        vvix_val = 90.0
-    if vvix_pct is None or not np.isfinite(vvix_pct):
-        vvix_pct = 50.0
+    """VVIX gauge showing current level and percentile."""
     fig = plt.figure(figsize=(10, 3.5))
 
     # Left: polar gauge
@@ -1407,14 +1307,7 @@ def chart_vvix_gauge(vvix_val, vvix_pct):
 
 
 def chart_vix_vvix_ratio(vix_series, vvix_series, ratio_z=None):
-    """VIX/VVIX ratio chart with mean reversion signal. Tolerates None / short series."""
-    if vix_series is None or vvix_series is None:
-        fig, ax = plt.subplots(figsize=(8, 4))
-        ax.text(0.5, 0.5, "VIX / VVIX data unavailable", ha='center', va='center',
-                transform=ax.transAxes, fontsize=12, color="#8899aa")
-        ax.set_axis_off()
-        return fig
-
+    """VIX/VVIX ratio chart with mean reversion signal."""
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 6), gridspec_kw={'height_ratios': [2, 1]}, sharex=False)
 
     min_len = min(len(vix_series), len(vvix_series))
@@ -1579,13 +1472,14 @@ def chart_vix_fear_gauge_enhanced(fear_data):
 
 
 def chart_gex_vex_vgr(records, spot):
-    """GEX/VEX/VGR dashboard. Tolerates empty / missing-key input."""
-    if not records:
-        return _empty_chain_figure("No options data available", n_axes=2, figsize=(14, 7))
-    df = pd.DataFrame(records).sort_values("strike")
-    if df.empty or "strike" not in df.columns:
-        return _empty_chain_figure("Empty options data", n_axes=2, figsize=(14, 7))
+    """GEX/VEX/VGR dashboard."""
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 7), sharex=True)
+    if not records:
+        return fig
+    df = pd.DataFrame(records)
+    if "strike" not in df.columns:
+        return fig
+    df = df.sort_values("strike")
     strikes = df["strike"].values
     width = (strikes[1]-strikes[0])*0.7 if len(strikes)>1 else 5
 
@@ -1740,6 +1634,7 @@ INSTITUTIONAL TERMINAL v7.0 -- VOLATILITY VINCE EDITION</span></div>
 
 with st.sidebar:
     st.markdown("<span style='color:#00d4ff;font-size:0.85rem;font-weight:700;letter-spacing:0.06em;font-family:sans-serif'>CONTROLS</span>", unsafe_allow_html=True)
+    st.checkbox("Force DEMO_MODE", value=DEMO_MODE)
     st.markdown("<hr style='border-color:#2a3a5a;margin:10px 0'>", unsafe_allow_html=True)
     st.markdown("<span style='color:#8899aa;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.06em;font-family:sans-serif'>Data Sources</span>", unsafe_allow_html=True)
     st.markdown("<span style='color:#c8d6e5;font-size:0.75rem;font-family:monospace'>CBOE  SPX options chain</span>", unsafe_allow_html=True)
@@ -1751,274 +1646,7 @@ with st.sidebar:
     st.markdown("<hr style='border-color:#2a3a5a;margin:10px 0'>", unsafe_allow_html=True)
     st.markdown("<span style='color:#3a4a5a;font-size:0.65rem;font-family:monospace'>No API keys in source</span>", unsafe_allow_html=True)
 
-
-
-# =============================================================================
-# NEW MODULE TABS (Options Flow / QIS / rBergomi / Pricing Lab)
-# =============================================================================
-def render_options_flow_tab(chain_data):
-    """Dealer GEX by strike with horizontal bar chart. Live CBOE data."""
-    if not chain_data or not chain_data.get("records"):
-        st.warning("No SPX options chain data — check CBOE connectivity")
-        return
-    spot = chain_data["spot"]
-    records = chain_data["records"]
-    gex_by_strike, oi_call_total, oi_put_total = {}, 0, 0
-    for r in records:
-        k = r.get("strike", 0)
-        if k <= 0:
-            continue
-        gc = r.get("gamma_call", 0) or 0
-        gp = r.get("gamma_put", 0) or 0
-        oc = r.get("oi_call", 0) or 0
-        op = r.get("oi_put", 0) or 0
-        net_gex = (gc * oc - gp * op) * spot ** 2 / 100 / 1e9
-        gex_by_strike[k] = gex_by_strike.get(k, 0) + net_gex
-        oi_call_total += oc
-        oi_put_total += op
-    if not gex_by_strike:
-        st.warning("No usable strike data")
-        return
-    net_gex_total = sum(gex_by_strike.values())
-    pc_ratio = oi_put_total / max(oi_call_total, 1)
-    sorted_strikes = sorted(gex_by_strike.keys())
-    pos_strikes = [k for k in sorted_strikes if gex_by_strike[k] > 0]
-    neg_strikes = [k for k in sorted_strikes if gex_by_strike[k] < 0]
-    call_wall = max(pos_strikes, key=lambda k: gex_by_strike[k]) if pos_strikes else sorted_strikes[0]
-    put_wall = min(neg_strikes, key=lambda k: gex_by_strike[k]) if neg_strikes else sorted_strikes[0]
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Net GEX", f"${net_gex_total:+.2f}B", "Positive" if net_gex_total > 0 else "Negative")
-    c2.metric("Call Wall", f"{call_wall:,.0f}", f"${gex_by_strike[call_wall]:+.1f}B")
-    c3.metric("Put Wall", f"{put_wall:,.0f}", f"${gex_by_strike[put_wall]:+.1f}B")
-    c4.metric("P/C OI Ratio", f"{pc_ratio:.2f}", "Bearish" if pc_ratio > 1 else "Bullish")
-    fig, ax = plt.subplots(figsize=(14, 6))
-    vals = [gex_by_strike[k] for k in sorted_strikes]
-    colors = ["#00ff88" if v >= 0 else "#ff4444" for v in vals]
-    ax.barh(range(len(sorted_strikes)), vals, color=colors, alpha=0.75, height=0.75)
-    spot_idx = min(range(len(sorted_strikes)), key=lambda i: abs(sorted_strikes[i] - spot))
-    ax.axhline(spot_idx, color="#ffaa00", linewidth=1, linestyle="--", alpha=0.6, label=f"Spot: {spot:,.0f}")
-    ax.set_yticks(range(len(sorted_strikes)))
-    ax.set_yticklabels([f"{k:,.0f}" for k in sorted_strikes], fontsize=8)
-    ax.set_xlabel("Net GEX ($B)", fontsize=9, fontfamily="sans-serif")
-    ax.set_title(f"Dealer Gamma Exposure by Strike  |  Net: ${net_gex_total:+.2f}B  |  P/C: {pc_ratio:.2f}",
-                 fontsize=11, fontweight="bold", fontfamily="sans-serif", pad=12)
-    ax.legend(loc="lower right", fontsize=8, framealpha=0.8)
-    ax.grid(True, alpha=0.3, axis="x")
-    ax.axvline(0, color="#2a3a5a", linewidth=1)
-    plt.tight_layout()
-    _mkfig = fig
-    st.pyplot(_mkfig)
-    plt.close(_mkfig)
-    with st.expander("About this view", expanded=False):
-        st.markdown("**Options Flow** — converted from the Krupp Capital SPX Options Flow Monitor (HTML+Chart.js). "
-                    "Live data: CBOE delayed SPX options chain. Metrics: Net GEX, Call/Put Walls, P/C OI ratio. "
-                    "Horizontal bar shows dealer gamma exposure by strike — green = positive gamma (dealers long, dampening), red = negative (dealers short, amplifying).")
-
-
-def render_qis_tab(data):
-    """Equity curve + drawdown for SPY/QQQ/BTC. qis if available, else pandas/numpy fallback."""
-    if not _QIS_AVAILABLE:
-        st.info("qis requires Python 3.10+. This env is Python 3.9. Falling back to pandas/numpy. Code works fully on the HF Space (Python 3.11).")
-    if not data:
-        st.warning("No market data available — check Yahoo Finance connectivity")
-        return
-    symbol = st.selectbox("Symbol", ["SPY", "QQQ", "BTC-USD"], key="qis_symbol")
-    s = _s(data.get(symbol))
-    if s is None or len(s) < 20:
-        st.warning(f"Insufficient data for {symbol}")
-        return
-    returns = s.pct_change(fill_method=None).dropna()
-    cumret = (1 + returns).cumprod()
-    running_max = cumret.cummax()
-    drawdown = (cumret / running_max - 1) * 100
-    total_return = float(cumret.iloc[-1] - 1) * 100
-    sharpe = float(returns.mean() / max(returns.std(), 1e-9) * np.sqrt(252))
-    max_dd = float(drawdown.min())
-    vol = float(returns.std() * np.sqrt(252) * 100)
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Total Return", f"{total_return:+.2f}%")
-    c2.metric("Sharpe (annl.)", f"{sharpe:.2f}")
-    c3.metric("Max Drawdown", f"{max_dd:.2f}%")
-    c4.metric("Volatility (annl.)", f"{vol:.2f}%")
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 6), sharex=True, gridspec_kw={"height_ratios": [3, 1]})
-    ax1.plot(cumret.index, cumret.values, color="#00d4ff", linewidth=1.5, label=f"{symbol} Total Return")
-    ax1.axhline(1, color="#2a3a5a", linewidth=0.5, linestyle="--")
-    ax1.fill_between(cumret.index, cumret.values, 1, where=(cumret.values >= 1), alpha=0.15, color="#00ff88")
-    ax1.set_ylabel("Cumulative Return", fontsize=9, fontfamily="sans-serif")
-    ax1.set_title(f"{symbol} Equity Curve & Drawdown  (6mo, daily)",
-                  fontsize=11, fontweight="bold", fontfamily="sans-serif", pad=12)
-    ax1.legend(loc="upper left", fontsize=8, framealpha=0.8)
-    ax1.grid(True, alpha=0.3)
-    ax1.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:.1f}x"))
-    ax2.fill_between(drawdown.index, drawdown.values, 0, alpha=0.4, color="#ff4444")
-    ax2.plot(drawdown.index, drawdown.values, color="#ff4444", linewidth=1)
-    ax2.set_ylabel("Drawdown (%)", fontsize=9, fontfamily="sans-serif")
-    ax2.set_xlabel("Date", fontsize=9, fontfamily="sans-serif")
-    ax2.grid(True, alpha=0.3)
-    ax2.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:.0f}%"))
-    plt.tight_layout()
-    _mkfig = fig
-    st.pyplot(_mkfig)
-    plt.close(_mkfig)
-    with st.expander("About this view", expanded=False):
-        st.markdown("**QIS Performance** — using `qis` (Hudson & Thames Quantitative Investment Strategies) when available. "
-                    "Live data: Yahoo Finance (6mo daily). Headline metrics: total return, Sharpe, max drawdown, annualized vol. "
-                    "Bottom panel shows drawdown as % from running peak.")
-
-
-def render_rbergomi_tab(chain_data):
-    """rBergomi rough-vol model: simulate paths, compare ATM vol to market."""
-    if not _RBERGOMI_AVAILABLE:
-        st.warning("rbergomi not importable. Check assets/modules/rbergomi_local/rough_bergomi-master/rbergomi/.")
-        return
-    if not chain_data or not chain_data.get("records"):
-        st.warning("No SPX options chain data")
-        return
-    spot = chain_data["spot"]
-    records = chain_data["records"]
-    atm_records = sorted([r for r in records if r.get("strike", 0) > 0],
-                         key=lambda r: abs(r["strike"] - spot))[:4]
-    market_ivs = [r.get("iv_call", 0) for r in atm_records if r.get("iv_call", 0) > 0]
-    market_iv = float(np.mean(market_ivs)) if market_ivs else 0.15
-    H, eta, rho, xi0 = 0.07, 1.9, -0.9, market_iv
-    try:
-        rb = _rBergomi(n=50, N=1000, T=1.0, a=H)
-        rb.eta = eta
-        rb.rho = rho
-        rb.xi = xi0
-        V = rb.V()
-        model_var = float(V[0, 0]) if hasattr(V, "shape") and V.size > 0 else xi0 ** 2
-        model_vol = float(np.sqrt(max(model_var, 1e-6)))
-    except Exception as e:
-        st.error(f"rBergomi simulation failed: {e}")
-        return
-    strikes_iv, market_ivs_strike = [], []
-    for r in records:
-        k = r.get("strike", 0)
-        m_iv = r.get("iv_call", 0)
-        if k <= 0 or m_iv <= 0:
-            continue
-        strikes_iv.append(k)
-        market_ivs_strike.append(m_iv)
-    if market_ivs_strike:
-        rmse = float(np.sqrt(np.mean((np.array(market_ivs_strike) - model_vol) ** 2)))
-    else:
-        rmse = 0.0
-    edge = model_vol - market_iv
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Market ATM IV", f"{market_iv * 100:.2f}%")
-    c2.metric("rBergomi Vol", f"{model_vol * 100:.2f}%", f"{edge * 100:+.2f}% edge")
-    c3.metric("RMSE", f"{rmse * 100:.2f}%")
-    c4.metric("Hurst H", f"{H:.2f}", f"eta={eta:.1f}, rho={rho:.1f}")
-    fig, ax = plt.subplots(figsize=(12, 5))
-    if strikes_iv:
-        ax.scatter(strikes_iv, [v * 100 for v in market_ivs_strike], color="#00d4ff", alpha=0.6, s=20, label="Market IV (calls)")
-    ax.axhline(model_vol * 100, color="#ffaa00", linewidth=2, linestyle="--",
-               label=f"rBergomi vol: {model_vol * 100:.2f}%")
-    ax.axvline(spot, color="#ffaa00", linewidth=1, linestyle=":", alpha=0.5, label=f"Spot: {spot:,.0f}")
-    ax.set_xlabel("Strike", fontsize=9, fontfamily="sans-serif")
-    ax.set_ylabel("Implied Volatility (%)", fontsize=9, fontfamily="sans-serif")
-    ax.set_title(f"rBergomi (H={H:.2f}, eta={eta:.1f}, rho={rho:.1f}) vs Market IV",
-                 fontsize=11, fontweight="bold", fontfamily="sans-serif", pad=12)
-    ax.legend(loc="upper right", fontsize=8, framealpha=0.8)
-    ax.grid(True, alpha=0.3)
-    ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:,.0f}"))
-    plt.tight_layout()
-    _mkfig = fig
-    st.pyplot(_mkfig)
-    plt.close(_mkfig)
-    with st.expander("About this view", expanded=False):
-        st.markdown(f"**rBergomi Vol Surface** — Bayer, Friz, Gatheral rough Bergomi model (HY simulation by Bennedsen-Lunde-Pakkanen, "
-                    f"variance reduction by McCrickerd-Pakkanen). Live data: CBOE SPX options chain. "
-                    f"Parameters: H={H} (Hurst), eta={eta} (vol-of-vol), rho={rho} (correlation), xi0={xi0:.4f} (forward variance). "
-                    "rBergomi captures the rough, non-Markovian nature of realized vol and is widely used for SPX vol surface modeling.")
-
-
-def render_pricing_lab_tab(chain_data):
-    """Live BSM pricing of SPX option chain, model-vs-market edge by strike."""
-    if not _VOP_AVAILABLE:
-        st.warning("vanilla_option_pricers not importable.")
-        return
-    if not chain_data or not chain_data.get("records"):
-        st.warning("No SPX options chain data")
-        return
-    spot = chain_data["spot"]
-    records = chain_data["records"]
-    rfr = 0.04351
-    # Filter to a single expiry so the BSM edge chart is per-expiry and the
-    # ATM headline is meaningful (rather than mixing 0DTE/44DTE/184DTE strikes).
-    target_expiry = chain_data.get("expirations", [None])[0] if chain_data.get("expirations") else None
-    if target_expiry:
-        records = [r for r in records if r.get("expiry") == target_expiry]
-    edge_data = []
-    for rec in records:
-        k = rec.get("strike", 0)
-        iv = rec.get("iv_call", 0)
-        bid = rec.get("bid_call", 0)
-        ask = rec.get("ask_call", 0)
-        dte = _dte_from_record(rec)
-        if k <= 0 or iv <= 0 or dte <= 0:
-            continue
-        ttm = dte / 365.0
-        try:
-            bsm_price = _compute_bsm_vanilla_price(forward=spot, strike=k, ttm=ttm, vol=iv, optiontype="C")
-        except Exception:
-            continue
-        market_mid = (bid + ask) / 2 if bid > 0 and ask > 0 else 0
-        edge = bsm_price - market_mid if market_mid > 0 else 0
-        edge_data.append({"strike": k, "bsm_price": bsm_price, "market_mid": market_mid, "edge": edge})
-    if not edge_data:
-        st.warning("No usable options data for pricing")
-        return
-    atm_rec = min([rec for rec in records if rec.get("strike", 0) > 0],
-                  key=lambda x: abs(x["strike"] - spot), default=None)
-    if atm_rec and atm_rec.get("iv_call", 0) > 0:
-        atm_bid = atm_rec.get("bid_call", 0)
-        atm_ask = atm_rec.get("ask_call", 0)
-        atm_mid = (atm_bid + atm_ask) / 2 if atm_bid > 0 and atm_ask > 0 else 0
-        atm_iv = atm_rec["iv_call"]
-        try:
-            atm_ttm = _dte_from_record(atm_rec) / 365.0
-            atm_bsm = _compute_bsm_vanilla_price(forward=spot, strike=atm_rec["strike"],
-                                                  ttm=atm_ttm, vol=atm_iv, optiontype="C")
-        except Exception:
-            atm_bsm = 0
-        atm_edge = atm_bsm - atm_mid if atm_mid > 0 else 0
-        atm_edge_pct = (atm_edge / atm_mid * 100) if atm_mid > 0 else 0
-    else:
-        atm_mid = atm_bsm = atm_edge = atm_edge_pct = 0
-        atm_iv = 0
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("ATM Call Mid", f"${atm_mid:.2f}")
-    c2.metric("BSM Model Price", f"${atm_bsm:.2f}")
-    c3.metric("Edge", f"${atm_edge:+.2f}", f"{atm_edge_pct:+.2f}%")
-    c4.metric("ATM IV", f"{atm_iv * 100:.2f}%")
-    fig, ax = plt.subplots(figsize=(12, 5))
-    sorted_edge = sorted(edge_data, key=lambda d: d["strike"])
-    strikes_arr = [d["strike"] for d in sorted_edge]
-    edges_arr = [d["edge"] for d in sorted_edge]
-    colors = ["#00ff88" if e > 0 else "#ff4444" for e in edges_arr]
-    width = (strikes_arr[1] - strikes_arr[0]) * 0.7 if len(strikes_arr) > 1 else 5
-    ax.bar(strikes_arr, edges_arr, width=width, color=colors, alpha=0.75)
-    ax.axvline(spot, color="#ffaa00", linewidth=1.5, linestyle="--", label=f"Spot: {spot:,.0f}")
-    ax.axhline(0, color="#2a3a5a", linewidth=1)
-    ax.set_xlabel("Strike", fontsize=9, fontfamily="sans-serif")
-    ax.set_ylabel("Edge (BSM - Market Mid, $)", fontsize=9, fontfamily="sans-serif")
-    ax.set_title("BSM Pricing Edge by Strike  |  Positive = model > market (overpriced)",
-                 fontsize=11, fontweight="bold", fontfamily="sans-serif", pad=12)
-    ax.legend(loc="upper right", fontsize=8, framealpha=0.8)
-    ax.grid(True, alpha=0.3, axis="y")
-    ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:,.0f}"))
-    plt.tight_layout()
-    _mkfig = fig
-    st.pyplot(_mkfig)
-    plt.close(_mkfig)
-    with st.expander("About this view", expanded=False):
-        st.markdown(f"**Option Pricing Lab** — Black-Scholes-Merton pricing of the live SPX option chain using `vanilla_option_pricers` (Numba-accelerated BSM). "
-                    f"For each strike, BSM price is computed from the market IV (so it should equal the market mid by construction); edge should be ~ 0 for liquid options. "
-                    f"Non-zero edges highlight mispricings, wide bid-ask spreads, or stale quotes. Risk-free rate: {rfr * 100:.2f}% (hardcoded; ideally from FRED).")
-
-tabs = st.tabs(["Markets Overview", "SPX & VIX Analytics", "Volatility Vince", "MarketGuardian Pro", "Crypto Ultra", "Insider Trades", "Settings", "Options Flow", "QIS Performance", "rBergomi", "Pricing Lab"])
+tabs = st.tabs(["Markets Overview", "SPX & VIX Analytics", "Volatility Vince", "MarketGuardian Pro", "Crypto Ultra", "Insider Trades", "Settings"])
 
 # ==============================================================================
 # TAB 1: MARKETS OVERVIEW
@@ -2042,7 +1670,6 @@ with tabs[0]:
         with col_fg2:
             fig_fg = chart_fear_greed_gauge(fg_val, fg_label)
             st.pyplot(fig_fg)
-            plt.close(fig_fg)
 
     st.markdown("<div style='height:1px;background:#2a3a5a;margin:16px 0'></div>", unsafe_allow_html=True)
     st.markdown("<span style='color:#00d4ff;font-size:0.8rem;font-weight:700;letter-spacing:0.04em;font-family:sans-serif'>GLOBAL INDICES</span>", unsafe_allow_html=True)
@@ -2155,7 +1782,6 @@ with tabs[0]:
     if vol_data:
         fig_vol = chart_vol_heatmap(vol_data)
         st.pyplot(fig_vol)
-        plt.close(fig_vol)
 
     st.markdown("<div style='height:1px;background:#2a3a5a;margin:16px 0'></div>", unsafe_allow_html=True)
     st.markdown("<span style='color:#00d4ff;font-size:0.8rem;font-weight:700;letter-spacing:0.04em;font-family:sans-serif'>VIX TERM STRUCTURE</span>", unsafe_allow_html=True)
@@ -2170,7 +1796,6 @@ with tabs[0]:
         with col1:
             fig_ts = chart_term_structure(vix_terms)
             st.pyplot(fig_ts)
-            plt.close(fig_ts)
         with col2:
             st.markdown("<span style='color:#8899aa;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.06em;font-family:sans-serif'>Term Structure Levels</span>", unsafe_allow_html=True)
             for name, val in vix_terms.items():
@@ -2214,9 +1839,132 @@ with tabs[1]:
         ts = chain.get("timestamp","")
         st.markdown(f"<div style='background:#1a2332;border-left:3px solid #00ff88;border-radius:2px;padding:8px 14px;margin:8px 0'><span style='color:#00ff88;font-family:monospace;font-size:0.8rem'>LIVE</span> <span style='color:#c8d6e5;font-family:monospace;font-size:0.8rem'>CBOE data | Spot: {spot:,.2f} | {len(records)} strikes | Source: {source} | {ts[:19]}</span></div>", unsafe_allow_html=True)
     else:
-        st.warning("Live CBOE 15-min delayed SPX options chain unavailable. Check connectivity to cdn.cboe.com.")
-        st.stop()
-
+        # Generate realistic synthetic data based on current VIX/VVIX from Yahoo
+        vix_data = fetch_yahoo()
+        vix_s = _s(vix_data.get("VIX"))
+        vvix_s = _s(vix_data.get("VVIX"))
+        spx_s = _s(vix_data.get("SPX"))
+        
+        # Use real VIX/VVIX if available, otherwise defaults
+        current_vix = vix_s.iloc[-1] if vix_s is not None and len(vix_s) > 0 else 18.0
+        current_vvix = vvix_s.iloc[-1] if vvix_s is not None and len(vvix_s) > 0 else 85.0
+        spot = spx_s.iloc[-1] if spx_s is not None and len(spx_s) > 0 else 5450.0
+        
+        # Derive ATM IV from VIX (VIX ~= ATM IV * 100 for SPX)
+        atm_iv = current_vix / 100.0
+        
+        rng = np.random.default_rng(int(spot) % 10000)
+        records = []
+        
+        # Generate strikes around spot (80% to 120% of spot)
+        strike_range = int(spot * 0.20 / 25) * 25
+        strikes = np.arange(spot - strike_range, spot + strike_range + 25, 25)
+        
+        # Generate multiple expiries (weekly + monthly)
+        from datetime import timedelta
+        today = datetime.utcnow().date()
+        expiries = []
+        # Weekly expiries (next 4 Fridays)
+        for i in range(1, 5):
+            d = today + timedelta(weeks=i)
+            # Adjust to Friday
+            while d.weekday() != 4:
+                d += timedelta(days=1)
+            expiries.append(d.strftime("%Y-%m-%d"))
+        # Monthly expiries (next 3 months)
+        for i in range(1, 4):
+            m = today.month + i
+            y = today.year + (m - 1) // 12
+            m = (m - 1) % 12 + 1
+            d = datetime(y, m, 1).date()
+            # Third Friday
+            while d.weekday() != 4:
+                d += timedelta(days=1)
+            d += timedelta(weeks=2)
+            expiries.append(d.strftime("%Y-%m-%d"))
+        
+        for exp in expiries:
+            try:
+                exp_date = datetime.strptime(exp, "%Y-%m-%d").date()
+                dte = max(1, (exp_date - today).days)
+            except:
+                dte = 30
+            T = dte / 365.0
+            
+            for k in strikes:
+                atm_dist = (k - spot) / spot
+                
+                # Realistic IV skew: higher for OTM puts, lower for OTM calls
+                # VVIX influences the skew steepness
+                skew_factor = current_vvix / 85.0  # Normalize around typical VVIX
+                iv_c = max(0.03, atm_iv + abs(atm_dist) * 0.25 * skew_factor - atm_dist * 0.08 * skew_factor)
+                iv_p = max(0.03, iv_c + 0.015 + max(0.0, -atm_dist * 0.12 * skew_factor))
+                
+                # Gamma: peaks ATM, decays with distance
+                gamma_base = 0.004 * np.exp(-60 * atm_dist**2) / np.sqrt(T)
+                gamma_c = max(0.000001, gamma_base * (1 + rng.normal(0, 0.05)))
+                gamma_p = max(0.000001, gamma_base * (1 + rng.normal(0, 0.05)))
+                
+                # Delta: based on Black-Scholes approximation
+                if T > 0 and iv_c > 0:
+                    d1_c = (np.log(spot/k) + (0.5 * iv_c**2) * T) / (iv_c * np.sqrt(T))
+                    delta_c = float(np.clip(0.5 + d1_c * 0.4, 0.01, 0.99))
+                else:
+                    delta_c = 0.5 if k <= spot else 0.01
+                delta_p = delta_c - 1.0
+                
+                # Vanna: peaks at wings
+                vanna_c = float(gamma_c * (1 - delta_c) / max(iv_c, 0.01) * atm_dist)
+                vanna_p = float(gamma_p * (1 - abs(delta_p)) / max(iv_p, 0.01) * atm_dist)
+                
+                # OI: higher ATM, lower wings, higher for puts (hedging demand)
+                oi_base = abs(rng.normal(6000, 2500))
+                oi_factor = np.exp(-25 * atm_dist**2) + 0.05
+                oi_call = int(oi_base * oi_factor * (1 + rng.normal(0, 0.1)))
+                oi_put = int(oi_base * oi_factor * 1.3 * (1 + rng.normal(0, 0.1)))
+                
+                # Theta
+                theta_c = -gamma_c * spot * spot * iv_c / (2 * np.sqrt(T)) / 365 if T > 0 else 0
+                theta_p = -gamma_p * spot * spot * iv_p / (2 * np.sqrt(T)) / 365 if T > 0 else 0
+                
+                # Vega
+                vega_val = spot * np.sqrt(T) * np.exp(-0.5 * (np.log(spot/k)/max(iv_c,0.01))**2) * 0.01 if T > 0 and iv_c > 0 else 0
+                
+                # Bid/ask
+                intrinsic_c = max(0, spot - k)
+                time_value_c = max(0.01, iv_c * spot * np.sqrt(T) * 0.4)
+                mid_c = intrinsic_c + time_value_c
+                spread_c = max(0.25, mid_c * 0.03)
+                
+                intrinsic_p = max(0, k - spot)
+                time_value_p = max(0.01, iv_p * spot * np.sqrt(T) * 0.4)
+                mid_p = intrinsic_p + time_value_p
+                spread_p = max(0.25, mid_p * 0.03)
+                
+                records.append({
+                    "strike": float(k),
+                    "expiry": exp,
+                    "oi_call": max(0, oi_call),
+                    "oi_put": max(0, oi_put),
+                    "iv_call": round(iv_c, 4),
+                    "iv_put": round(iv_p, 4),
+                    "delta_call": round(delta_c, 4),
+                    "delta_put": round(delta_p, 4),
+                    "gamma_call": round(gamma_c, 6),
+                    "gamma_put": round(gamma_p, 6),
+                    "theta_call": round(theta_c, 4),
+                    "theta_put": round(theta_p, 4),
+                    "vega_call": round(vega_val, 4),
+                    "vega_put": round(vega_val, 4),
+                    "vanna_call": round(vanna_c, 4),
+                    "vanna_put": round(vanna_p, 4),
+                    "bid_call": round(max(0.01, mid_c - spread_c/2), 2),
+                    "ask_call": round(mid_c + spread_c/2, 2),
+                    "bid_put": round(max(0.01, mid_p - spread_p/2), 2),
+                    "ask_put": round(mid_p + spread_p/2, 2),
+                })
+        
+        st.markdown(f"<div style='background:#1a2332;border-left:3px solid #ffaa00;border-radius:2px;padding:8px 14px;margin:8px 0'><span style='color:#ffaa00;font-family:monospace;font-size:0.8rem'>SYNTHETIC</span> <span style='color:#c8d6e5;font-family:monospace;font-size:0.8rem'>CBOE unreachable | VIX: {current_vix:.1f} | VVIX: {current_vvix:.1f} | {len(records)} records | {len(expiries)} expiries</span></div>", unsafe_allow_html=True)
 
     strikes_list = records
     gex_val = compute_gex_plus(strikes_list, spot)
@@ -2269,51 +2017,35 @@ with tabs[1]:
     with c1:
         st.markdown("<span style='color:#8899aa;font-size:0.75rem;font-family:sans-serif'>GEX+ Crash Profile</span>", unsafe_allow_html=True)
         profile = compute_crash_profile(strikes_list, spot)
-        _mkfig = chart_gex_profile(profile, spot, zg_val)
-        st.pyplot(_mkfig)
-        plt.close(_mkfig)
+        st.pyplot(chart_gex_profile(profile, spot, zg_val))
     with c2:
         st.markdown("<span style='color:#8899aa;font-size:0.75rem;font-family:sans-serif'>Open Interest by Strike</span>", unsafe_allow_html=True)
-        _mkfig = chart_oi_by_strike(records, spot)
-        st.pyplot(_mkfig)
-        plt.close(_mkfig)
+        st.pyplot(chart_oi_by_strike(records, spot))
 
     c1, c2 = st.columns(2)
     with c1:
         st.markdown("<span style='color:#8899aa;font-size:0.75rem;font-family:sans-serif'>Gamma Exposure by Strike</span>", unsafe_allow_html=True)
-        _mkfig = chart_gex_by_strike(records, spot)
-        st.pyplot(_mkfig)
-        plt.close(_mkfig)
+        st.pyplot(chart_gex_by_strike(records, spot))
     with c2:
         st.markdown("<span style='color:#8899aa;font-size:0.75rem;font-family:sans-serif'>IV Skew</span>", unsafe_allow_html=True)
-        _mkfig = chart_iv_skew(records, spot)
-        st.pyplot(_mkfig)
-        plt.close(_mkfig)
+        st.pyplot(chart_iv_skew(records, spot))
 
     c1, c2 = st.columns(2)
     with c1:
         st.markdown("<span style='color:#8899aa;font-size:0.75rem;font-family:sans-serif'>Volatility Smile</span>", unsafe_allow_html=True)
-        _mkfig = chart_vol_smile(records, spot)
-        st.pyplot(_mkfig)
-        plt.close(_mkfig)
+        st.pyplot(chart_vol_smile(records, spot))
     with c2:
         st.markdown("<span style='color:#8899aa;font-size:0.75rem;font-family:sans-serif'>GEX+ Heatmap (Spot vs IV Shock)</span>", unsafe_allow_html=True)
         hm = _compute_heatmap_inline(strikes_list, spot, n_spot=30, n_iv=40)
-        _mkfig = chart_heatmap(hm)
-        st.pyplot(_mkfig)
-        plt.close(_mkfig)
+        st.pyplot(chart_heatmap(hm))
 
     c1, c2 = st.columns(2)
     with c1:
         st.markdown("<span style='color:#8899aa;font-size:0.75rem;font-family:sans-serif'>Put/Call Ratios by Expiry</span>", unsafe_allow_html=True)
-        _mkfig = chart_pc_ratios(records)
-        st.pyplot(_mkfig)
-        plt.close(_mkfig)
+        st.pyplot(chart_pc_ratios(records))
     with c2:
         st.markdown("<span style='color:#8899aa;font-size:0.75rem;font-family:sans-serif'>GEX/VEX/VGR Dashboard</span>", unsafe_allow_html=True)
-        _mkfig = chart_gex_vex_vgr(records, spot)
-        st.pyplot(_mkfig)
-        plt.close(_mkfig)
+        st.pyplot(chart_gex_vex_vgr(records, spot))
 
     # BL Forecast
     st.markdown("<div style='height:1px;background:#2a3a5a;margin:12px 0'></div>", unsafe_allow_html=True)
@@ -2330,9 +2062,7 @@ with tabs[1]:
             with fc_cols[2]: st.metric("5th pct", f"{f['p5']:,.0f}")
             with fc_cols[3]: st.metric("95th pct", f"{f['p95']:,.0f}")
             st.caption(f"90% Range: {f['range_90'][0]:,.0f} -- {f['range_90'][1]:,.0f}")
-    _mkfig = chart_bl_forecast(fc_bl["one_day"], fc_bl["one_week"])
-    st.pyplot(_mkfig)
-    plt.close(_mkfig)
+    st.pyplot(chart_bl_forecast(fc_bl["one_day"], fc_bl["one_week"]))
 
     # Options Chain Table
     st.markdown("<div style='height:1px;background:#2a3a5a;margin:12px 0'></div>", unsafe_allow_html=True)
@@ -2384,14 +2114,10 @@ with tabs[2]:
     c1, c2 = st.columns(2)
     with c1:
         if vvix_cur is not None and vvix_pct is not None:
-            _mkfig = chart_vvix_gauge(vvix_cur, vvix_pct)
-            st.pyplot(_mkfig)
-            plt.close(_mkfig)
+            st.pyplot(chart_vvix_gauge(vvix_cur, vvix_pct))
     with c2:
         if vix_s is not None and vvix_s is not None:
-            _mkfig = chart_vix_vvix_ratio(vix_s, vvix_s, ratio_z)
-            st.pyplot(_mkfig)
-            plt.close(_mkfig)
+            st.pyplot(chart_vix_vvix_ratio(vix_s, vvix_s, ratio_z))
 
     # ===================================================================
     # ROW 2: VIX TERM STRUCTURE (ENHANCED)
@@ -2426,9 +2152,7 @@ with tabs[2]:
                   f"{'Positive' if ts_metrics.get('roll_yield', 0) > 0 else 'Negative'}")
 
     if len(vix_terms) >= 2:
-        _mkfig = chart_term_structure(vix_terms)
-        st.pyplot(_mkfig)
-        plt.close(_mkfig)
+        st.pyplot(chart_term_structure(vix_terms))
 
     # VIX Term Structure Historical Heatmap
     if len(vix_ts_keys) >= 2:
@@ -2438,9 +2162,7 @@ with tabs[2]:
             if s is not None and len(s) > 30:
                 vix_ts_hist[name] = s.tail(60)
         if len(vix_ts_hist) >= 2:
-            _mkfig = chart_term_structure_heatmap(vix_ts_hist)
-            st.pyplot(_mkfig)
-            plt.close(_mkfig)
+            st.pyplot(chart_term_structure_heatmap(vix_ts_hist))
 
     # ===================================================================
     # ROW 3: VOLATILITY REGIME DETECTION
@@ -2469,15 +2191,11 @@ with tabs[2]:
 
     c1, c2 = st.columns(2)
     with c1:
-        _mkfig = chart_vol_regime_dashboard(regime_data)
-        st.pyplot(_mkfig)
-        plt.close(_mkfig)
+        st.pyplot(chart_vol_regime_dashboard(regime_data))
     with c2:
         trans_matrix = regime_data.get("transition_matrix", {})
         if trans_matrix:
-            _mkfig = chart_regime_transition_matrix(trans_matrix)
-            st.pyplot(_mkfig)
-            plt.close(_mkfig)
+            st.pyplot(chart_regime_transition_matrix(trans_matrix))
 
     # ===================================================================
     # ROW 4: VOLATILITY RISK PREMIUM
@@ -2495,9 +2213,7 @@ with tabs[2]:
                 z = vrp['vrp_zscore']
                 color = "#00ff88" if vrp_val > 0 else "#ff4444"
                 st.markdown(f"<div style='background:#1a2332;border:1px solid {color};border-radius:4px;padding:8px 12px'><div style='color:#8899aa;font-size:0.65rem;text-transform:uppercase'>VRP ({label})</div><div style='color:{color};font-size:1.3rem;font-weight:700;font-family:monospace'>{vrp_val:+.2f}</div><div style='color:#8899aa;font-size:0.7rem'>Z-Score: {z:+.2f}</div><div style='color:#8899aa;font-size:0.65rem'>VIX: {vrp['vix']:.2f} | RV: {vrp['rv']:.2f}</div></div>", unsafe_allow_html=True)
-        _mkfig = chart_vrp_analysis(vrp_data)
-        st.pyplot(_mkfig)
-        plt.close(_mkfig)
+        st.pyplot(chart_vrp_analysis(vrp_data))
     else:
         st.info("Insufficient data for VRP calculation")
 
@@ -2528,9 +2244,7 @@ with tabs[2]:
         st.metric("VRP Component", f"{components.get('VRP', 0):.1f}/20",
                   f"Z-Score: {fear_data.get('components', {}).get('VRP_z', 0):+.2f}" if fear_data.get('components', {}).get('VRP_z') is not None else None)
 
-    _mkfig = chart_vix_fear_gauge_enhanced(fear_data)
-    st.pyplot(_mkfig)
-    plt.close(_mkfig)
+    st.pyplot(chart_vix_fear_gauge_enhanced(fear_data))
 
     # ===================================================================
     # ROW 6: CROSS-ASSET VOLATILITY MONITOR
@@ -2561,9 +2275,7 @@ with tabs[2]:
 
         disp = cross_data.get("dispersion", {}).get("vol_of_vols", 0)
         st.caption(f"Vol of Vols (cross-asset dispersion): {disp:.1f}% | Higher = more disagreement between asset vols")
-        _mkfig = chart_cross_asset_vol(cross_data)
-        st.pyplot(_mkfig)
-        plt.close(_mkfig)
+        st.pyplot(chart_cross_asset_vol(cross_data))
 
     # ===================================================================
     # ROW 7: GEX/VEX/VGR DASHBOARD
@@ -2571,14 +2283,44 @@ with tabs[2]:
     st.markdown("<div style='height:1px;background:#2a3a5a;margin:12px 0'></div>", unsafe_allow_html=True)
     st.markdown("<span style='color:#00d4ff;font-size:0.8rem;font-weight:700;letter-spacing:0.04em;font-family:sans-serif'>GEX/VEX/VGR EXPOSURE DASHBOARD</span>", unsafe_allow_html=True)
 
-    # Live CBOE 15-min delayed SPX options chain only. No synthetic fallback.
-    chain_vv = fetch_cboe_spx_chain()
-    if chain_vv and chain_vv.get("records"):
-        spot_vv = chain_vv["spot"]
-        records_vv = chain_vv["records"]
-    else:
-        st.warning("Live CBOE 15-min delayed SPX options chain unavailable. Check connectivity to cdn.cboe.com.")
-        st.stop()
+    # Use the SPX chain from Tab 2 if available, otherwise use synthetic
+    try:
+        chain_vv = fetch_cboe_spx_chain()
+        if chain_vv and chain_vv.get("records"):
+            spot_vv = chain_vv["spot"]
+            records_vv = chain_vv["records"]
+        else:
+            raise Exception("No CBOE data")
+    except:
+        # Use synthetic based on current VIX
+        spot_vv = spx_cur if spx_cur else 5450.0
+        vix_for_synth = vix_cur if vix_cur else 18.0
+        vvix_for_synth = vvix_cur if vvix_cur else 85.0
+        rng = np.random.default_rng(42)
+        records_vv = []
+        strikes = np.arange(spot_vv * 0.85, spot_vv * 1.15 + 25, 25)
+        atm_iv = vix_for_synth / 100.0
+        skew_factor = vvix_for_synth / 85.0
+        T = 30.0 / 365.0  # Default 30 DTE for synthetic
+        for k in strikes:
+            atm_dist = (k - spot_vv) / spot_vv
+            iv_c = max(0.03, atm_iv + abs(atm_dist) * 0.25 * skew_factor - atm_dist * 0.08 * skew_factor)
+            iv_p = max(0.03, iv_c + 0.015 + max(0.0, -atm_dist * 0.12 * skew_factor))
+            gamma = 0.004 * np.exp(-60 * atm_dist**2)
+            if T > 0 and iv_c > 0:
+                d1 = (np.log(spot_vv/k) + (0.5 * iv_c**2) * 30/365) / (iv_c * np.sqrt(30/365))
+                dc = float(np.clip(0.5 + d1 * 0.4, 0.01, 0.99))
+            else:
+                dc = 0.5 if k <= spot_vv else 0.01
+            oi_c = int(abs(rng.normal(6000, 2500)) * (np.exp(-25 * atm_dist**2) + 0.05))
+            oi_p = int(abs(rng.normal(7000, 3000)) * (np.exp(-25 * atm_dist**2) + 0.05) * 1.3)
+            records_vv.append({"strike": float(k), "oi_call": oi_c, "oi_put": oi_p,
+                               "iv_c": round(iv_c, 4), "iv_p": round(iv_p, 4),
+                               "gamma_c": round(gamma, 6), "gamma_p": round(gamma, 6),
+                               "delta_call": round(dc, 4), "delta_put": round(dc - 1.0, 4),
+                               "vanna_c": round(gamma * (1-dc) / max(iv_c, 0.01) * atm_dist, 4),
+                               "vanna_p": round(gamma * (1-abs(dc-1)) / max(iv_p, 0.01) * atm_dist, 4)})
+        spot_vv = spot_vv  # Use the synthetic spot
 
     gex_vv = compute_gex_plus(records_vv, spot_vv)
     vex_vv = compute_vanna_exposure(records_vv, spot_vv)
@@ -2602,14 +2344,10 @@ with tabs[2]:
 
     c1, c2 = st.columns(2)
     with c1:
-        _mkfig = chart_gex_vex_vgr(records_vv, spot_vv)
-        st.pyplot(_mkfig)
-        plt.close(_mkfig)
+        st.pyplot(chart_gex_vex_vgr(records_vv, spot_vv))
     with c2:
         profile = compute_crash_profile(records_vv, spot_vv)
-        _mkfig = chart_gex_profile(profile, spot_vv, zg_vv)
-        st.pyplot(_mkfig)
-        plt.close(_mkfig)
+        st.pyplot(chart_gex_profile(profile, spot_vv, zg_vv))
 
 # ==============================================================================
 # TAB 4: MARKETGUARDIAN PRO
@@ -2635,8 +2373,8 @@ with tabs[3]:
             for old in ['>95.3 <span class="status-indicator status-orange"></span>']:
                 html_content = html_content.replace(old, f'>{vvix_val_mg} <span class="status-indicator status-orange"></span>', 1)
             st.components.v1.html(html_content, height=900, scrolling=True)
-            st.warning("Live CBOE 15-min delayed SPX options chain unavailable. Check connectivity to cdn.cboe.com.")
-            st.stop()
+        else:
+            st.error("marketguardian_pro.html not found")
     except Exception as e:
         st.error(f"MarketGuardian Pro error: {e}")
 
@@ -2674,9 +2412,7 @@ with tabs[4]:
     for sym in ["btc","eth"]:
         if sym in deribit.get("orderbooks",{}):
             st.markdown(f"<span style='color:#8899aa;font-size:0.75rem;font-family:sans-serif'>{sym.upper()} Order Book</span>", unsafe_allow_html=True)
-            _mkfig = chart_order_book(deribit["orderbooks"][sym], sym)
-            st.pyplot(_mkfig)
-            plt.close(_mkfig)
+            st.pyplot(chart_order_book(deribit["orderbooks"][sym], sym))
 
     st.markdown("<div style='height:1px;background:#2a3a5a;margin:12px 0'></div>", unsafe_allow_html=True)
     st.markdown("<span style='color:#00d4ff;font-size:0.8rem;font-weight:700;letter-spacing:0.04em;font-family:sans-serif'>COINGECKO TOP 20</span>", unsafe_allow_html=True)
@@ -2700,9 +2436,7 @@ with tabs[4]:
                 prices_sp = cg[sym_s]["sparkline"]
                 if prices_sp:
                     st.markdown(f"<span style='color:#8899aa;font-size:0.7rem;font-family:sans-serif'>{sym_s} -- {fmt_price(cg[sym_s]['price'])}</span>", unsafe_allow_html=True)
-                    _mkfig = chart_sparkline(prices_sp, sym_s, cg[sym_s]["price"])
-                    st.pyplot(_mkfig)
-                    plt.close(_mkfig)
+                    st.pyplot(chart_sparkline(prices_sp, sym_s, cg[sym_s]["price"]))
 
 # ==============================================================================
 # TAB 6: INSIDER TRADES
@@ -2732,8 +2466,9 @@ with tabs[5]:
 # ==============================================================================
 with tabs[6]:
     st.markdown("<span style='color:#00d4ff;font-size:0.85rem;font-weight:700;letter-spacing:0.04em;font-family:sans-serif'>SETTINGS &amp; API REFERENCE</span>", unsafe_allow_html=True)
+    demo_str = '1' if DEMO_MODE else '0'
     fred_str = '***' if os.environ.get('FRED_API_KEY') else 'NOT SET'
-    st.code(f"FRED_API_KEY={fred_str}")
+    st.code(f"DEMO_MODE={demo_str}\nFRED_API_KEY={fred_str}")
     st.markdown("<div style='height:1px;background:#2a3a5a;margin:12px 0'></div>", unsafe_allow_html=True)
     st.markdown("<span style='color:#00d4ff;font-size:0.8rem;font-weight:700;letter-spacing:0.04em;font-family:sans-serif'>API KEY REFERENCE</span>", unsafe_allow_html=True)
     st.markdown("| Key | Provider | Required |\n|-----|----------|----------|\n| `FRED_API_KEY` | FRED (Fed) | Optional |\n| `ALPHA_VANTAGE_API_KEY` | Alpha Vantage | Optional |\n| `COINGECKO_API_KEY` | CoinGecko | Optional |\n| `DERIBIT_API_KEY` | Deribit | Not needed |\n| `BINGX_API_KEY` | BingX | Not needed |")
@@ -2746,44 +2481,3 @@ with tabs[6]:
 
 st.markdown("<div style='height:1px;background:#2a3a5a;margin:16px 0 8px 0'></div>", unsafe_allow_html=True)
 st.markdown("<span style='color:#3a4a5a;font-size:0.65rem;font-family:monospace'>KRUPP CAPITAL | Quantitative Desk | Precision in Chaos, Alpha in Variance</span>", unsafe_allow_html=True)
-
-
-# ==============================================================================
-# TAB 8: OPTIONS FLOW (from spx-options-flow-monitor.html)
-# ==============================================================================
-with tabs[7]:
-    st.markdown("<span style='color:#00d4ff;font-size:0.85rem;font-weight:700;letter-spacing:0.04em;font-family:sans-serif'>OPTIONS FLOW &mdash; Dealer Gamma &amp; Delta Exposure</span>", unsafe_allow_html=True)
-    st.caption("Live CBOE SPX options chain | Net GEX | Call/Put Walls | P/C OI Ratio")
-    with st.spinner("Fetching SPX options chain..."):
-        _chain_flow = fetch_cboe_spx_chain()
-    render_options_flow_tab(_chain_flow)
-
-# ==============================================================================
-# TAB 9: QIS PERFORMANCE
-# ==============================================================================
-with tabs[8]:
-    st.markdown("<span style='color:#00d4ff;font-size:0.85rem;font-weight:700;letter-spacing:0.04em;font-family:sans-serif'>QIS PERFORMANCE &mdash; Equity Curve &amp; Drawdown</span>", unsafe_allow_html=True)
-    st.caption("Live Yahoo Finance data | SPY / QQQ / BTC | Total Return, Sharpe, Max DD, Vol")
-    with st.spinner("Fetching market data..."):
-        _yahoo_data = fetch_yahoo()
-    render_qis_tab(_yahoo_data)
-
-# ==============================================================================
-# TAB 10: rBERGOMI
-# ==============================================================================
-with tabs[9]:
-    st.markdown("<span style='color:#00d4ff;font-size:0.85rem;font-weight:700;letter-spacing:0.04em;font-family:sans-serif'>rBERGOMI &mdash; Rough Volatility Model</span>", unsafe_allow_html=True)
-    st.caption("Bayer-Friz-Gatheral rough Bergomi | Live SPX options chain | Model vs Market ATM vol")
-    with st.spinner("Fetching SPX options chain..."):
-        _chain_rb = fetch_cboe_spx_chain()
-    render_rbergomi_tab(_chain_rb)
-
-# ==============================================================================
-# TAB 11: PRICING LAB (vanilla_option_pricers)
-# ==============================================================================
-with tabs[10]:
-    st.markdown("<span style='color:#00d4ff;font-size:0.85rem;font-weight:700;letter-spacing:0.04em;font-family:sans-serif'>PRICING LAB &mdash; BSM Edge by Strike</span>", unsafe_allow_html=True)
-    st.caption("Live SPX option chain | Numba-accelerated BSM | Model vs Market mid edge")
-    with st.spinner("Fetching SPX options chain..."):
-        _chain_vop = fetch_cboe_spx_chain()
-    render_pricing_lab_tab(_chain_vop)
