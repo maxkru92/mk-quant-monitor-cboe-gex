@@ -525,7 +525,7 @@ def compute_vix_fear_gauge(vix_val, vvix_val, vix_vvix_ratio, vrp_val):
 
 def compute_max_pain(records, spot):
     """Calculate max pain strike — the strike where option writers have minimum payout."""
-    if not records: return None, {}
+    if not isinstance(records, (list, tuple)) or len(records) == 0: return None, {}
     strikes = sorted(set(r.get("strike", 0) for r in records if r.get("strike", 0) > 0))
     if not strikes: return None, {}
 
@@ -549,7 +549,7 @@ def compute_max_pain(records, spot):
 
 def compute_gamma_walls(records, spot, top_n=5):
     """Identify strikes with highest absolute GEX (gamma walls)."""
-    if not records: return []
+    if not isinstance(records, (list, tuple)) or len(records) == 0: return []
     walls = []
     for r in records:
         strike = r.get("strike", 0)
@@ -563,7 +563,7 @@ def compute_gamma_walls(records, spot, top_n=5):
 
 def compute_delta_neutral_strike(records, spot):
     """Find the strike closest to delta-neutral (call delta + put delta ~ 0)."""
-    if not records: return None
+    if not isinstance(records, (list, tuple)) or len(records) == 0: return None
     best_strike = None
     best_diff = float('inf')
     for r in records:
@@ -941,7 +941,7 @@ ASSET_VOLA_MAP = {
 
 def chart_gex_profile(crash_profile, spot, zero_gamma):
     fig, ax = plt.subplots(figsize=(12, 5))
-    if not crash_profile:
+    if not isinstance(crash_profile, (list, tuple)) or len(crash_profile) == 0:
         return fig
     df = pd.DataFrame(crash_profile)
     if "spot_pct" not in df.columns or "gex_plus" not in df.columns:
@@ -965,7 +965,7 @@ def chart_gex_profile(crash_profile, spot, zero_gamma):
 
 def chart_oi_by_strike(records, spot):
     fig, ax = plt.subplots(figsize=(14, 5))
-    if not records:
+    if not isinstance(records, (list, tuple)) or len(records) == 0:
         return fig
     df = pd.DataFrame(records)
     if "strike" not in df.columns:
@@ -989,7 +989,7 @@ def chart_oi_by_strike(records, spot):
 
 def chart_gex_by_strike(records, spot):
     fig, ax = plt.subplots(figsize=(14, 5))
-    if not records:
+    if not isinstance(records, (list, tuple)) or len(records) == 0:
         return fig
     df = pd.DataFrame(records)
     if "strike" not in df.columns:
@@ -1019,7 +1019,7 @@ def chart_gex_by_strike(records, spot):
 
 def chart_iv_skew(records, spot):
     fig, ax = plt.subplots(figsize=(12, 5))
-    if not records:
+    if not isinstance(records, (list, tuple)) or len(records) == 0:
         return fig
     df = pd.DataFrame(records)
     if "strike" not in df.columns:
@@ -1043,7 +1043,7 @@ def chart_iv_skew(records, spot):
 
 def chart_vol_smile(records, spot, expiry=None):
     fig, ax = plt.subplots(figsize=(12, 5))
-    if not records:
+    if not isinstance(records, (list, tuple)) or len(records) == 0:
         return fig
     df = pd.DataFrame(records)
     if "strike" not in df.columns:
@@ -1474,7 +1474,7 @@ def chart_vix_fear_gauge_enhanced(fear_data):
 def chart_gex_vex_vgr(records, spot):
     """GEX/VEX/VGR dashboard."""
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 7), sharex=True)
-    if not records:
+    if not isinstance(records, (list, tuple)) or len(records) == 0:
         return fig
     df = pd.DataFrame(records)
     if "strike" not in df.columns:
