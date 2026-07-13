@@ -10,3 +10,4 @@ venv/
 # Local artifacts
 .DS_Store
 *.log
+.venv_test/
