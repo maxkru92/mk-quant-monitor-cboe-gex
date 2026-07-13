@@ -941,10 +941,8 @@ ASSET_VOLA_MAP = {
 
 def chart_gex_profile(crash_profile, spot, zero_gamma):
     fig, ax = plt.subplots(figsize=(12, 5))
-    if not isinstance(crash_profile, (list, tuple)) or len(crash_profile) == 0:
-        return fig
     df = pd.DataFrame(crash_profile)
-    if "spot_pct" not in df.columns or "gex_plus" not in df.columns:
+    if df.empty or "spot_pct" not in df.columns or "gex_plus" not in df.columns:
         return fig
     ax.fill_between(df["spot_pct"], df["gex_plus"], 0, where=(df["gex_plus"]>=0).values, alpha=0.25, color="#00ff88", label="Long Gamma")
     ax.fill_between(df["spot_pct"], df["gex_plus"], 0, where=(df["gex_plus"]<0).values, alpha=0.25, color="#ff4444", label="Short Gamma")
@@ -965,10 +963,8 @@ def chart_gex_profile(crash_profile, spot, zero_gamma):
 
 def chart_oi_by_strike(records, spot):
     fig, ax = plt.subplots(figsize=(14, 5))
-    if not isinstance(records, (list, tuple)) or len(records) == 0:
-        return fig
     df = pd.DataFrame(records)
-    if "strike" not in df.columns:
+    if df.empty or "strike" not in df.columns:
         return fig
     df = df.sort_values("strike")
     strikes = df["strike"].values
@@ -989,10 +985,8 @@ def chart_oi_by_strike(records, spot):
 
 def chart_gex_by_strike(records, spot):
     fig, ax = plt.subplots(figsize=(14, 5))
-    if not isinstance(records, (list, tuple)) or len(records) == 0:
-        return fig
     df = pd.DataFrame(records)
-    if "strike" not in df.columns:
+    if df.empty or "strike" not in df.columns:
         return fig
     df = df.sort_values("strike")
     strikes = df["strike"].values
@@ -1019,10 +1013,8 @@ def chart_gex_by_strike(records, spot):
 
 def chart_iv_skew(records, spot):
     fig, ax = plt.subplots(figsize=(12, 5))
-    if not isinstance(records, (list, tuple)) or len(records) == 0:
-        return fig
     df = pd.DataFrame(records)
-    if "strike" not in df.columns:
+    if df.empty or "strike" not in df.columns:
         return fig
     df = df.sort_values("strike")
     moneyness = (df["strike"] / spot - 1) * 100
@@ -1043,10 +1035,8 @@ def chart_iv_skew(records, spot):
 
 def chart_vol_smile(records, spot, expiry=None):
     fig, ax = plt.subplots(figsize=(12, 5))
-    if not isinstance(records, (list, tuple)) or len(records) == 0:
-        return fig
     df = pd.DataFrame(records)
-    if "strike" not in df.columns:
+    if df.empty or "strike" not in df.columns:
         return fig
     df = df.sort_values("strike")
     if expiry:
@@ -1474,10 +1464,8 @@ def chart_vix_fear_gauge_enhanced(fear_data):
 def chart_gex_vex_vgr(records, spot):
     """GEX/VEX/VGR dashboard."""
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 7), sharex=True)
-    if not isinstance(records, (list, tuple)) or len(records) == 0:
-        return fig
     df = pd.DataFrame(records)
-    if "strike" not in df.columns:
+    if df.empty or "strike" not in df.columns:
         return fig
     df = df.sort_values("strike")
     strikes = df["strike"].values
