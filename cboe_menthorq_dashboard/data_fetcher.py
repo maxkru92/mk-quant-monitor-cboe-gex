@@ -7,11 +7,11 @@ Spot price source: Yahoo Finance (lightweight) with CBOE fallback.
 
 from __future__ import annotations
 
+import re
 import time
 import warnings
 from typing import Optional
 
-import numpy as np
 import pandas as pd
 import requests
 import yfinance as yf
@@ -59,6 +59,10 @@ def _format_cboe_symbol(symbol: str) -> str:
     return symbol
 
 
+# Pre-compiled regex for CBOE option symbols like SPXW250417C05050000
+_OPTION_SYMBOL_RE = re.compile(r"(\d{6})([CP])(\d+)$")
+
+
 # ------------------------------------------------------------------ #
 # Public API
 # ------------------------------------------------------------------ #
@@ -74,7 +78,15 @@ class LiveOptionsFetcher:
     # ------------------------------------------------------------------ #
     def spot_price(self) -> float:
         """Return the last traded price of the underlying."""
-        # Try Yahoo Finance first (lightweight)
+        # Primary: CBOE delayed spot from the options endpoint (reliable for indices)
+        try:
+            spot = self._cboe_options_spot_price()
+            if spot:
+                return float(spot)
+        except Exception:
+            pass
+
+        # Fallback: Yahoo Finance
         try:
             hist = self._ticker.history(period="5d", interval="1d")
             if not hist.empty:
@@ -98,18 +110,23 @@ class LiveOptionsFetcher:
         except Exception:
             pass
 
-        # Fallback to CBOE delayed spot
-        try:
-            cboe_symbol = _format_cboe_symbol(self.symbol)
-            url = f"https://cdn.cboe.com/api/global/delayed_quotes/options/{cboe_symbol}.json"
-            data = _SESSION.get(url, timeout=20).json()
-            spot = data.get("data", {}).get("current_price")
-            if spot:
-                return float(spot)
-        except Exception:
-            pass
-
         raise ValueError(f"Could not determine spot price for {self.symbol}")
+
+    def _cboe_options_spot_price(self) -> float:
+        """Fetch delayed spot price from the CBOE options endpoint."""
+        cboe_symbol = _format_cboe_symbol(self.symbol)
+        url = f"https://cdn.cboe.com/api/global/delayed_quotes/options/{cboe_symbol}.json"
+
+        def _fetch():
+            r = _SESSION.get(url, timeout=20)
+            r.raise_for_status()
+            payload = r.json()
+            spot = payload.get("data", {}).get("current_price")
+            if spot is None:
+                raise ValueError("No current_price in CBOE options payload")
+            return float(spot)
+
+        return _retry(_fetch, max_retries=3, sleep_base=1.0)
 
     # ------------------------------------------------------------------ #
     # Options chain from CBOE
@@ -125,9 +142,12 @@ class LiveOptionsFetcher:
         cboe_symbol = _format_cboe_symbol(self.symbol)
         url = f"https://cdn.cboe.com/api/global/delayed_quotes/options/{cboe_symbol}.json"
 
-        response = _SESSION.get(url, timeout=30)
-        response.raise_for_status()
-        data = response.json()
+        def _fetch():
+            r = _SESSION.get(url, timeout=30)
+            r.raise_for_status()
+            return r.json()
+
+        data = _retry(_fetch, max_retries=3, sleep_base=1.0)
 
         if not data or "data" not in data or "options" not in data["data"]:
             raise ValueError(f"No options data returned by CBOE for {self.symbol}")
@@ -170,11 +190,9 @@ class LiveOptionsFetcher:
         # Format: [Ticker][YYMMDD][C/P][Strike*1000]
         def _parse_option_symbol(sym: str):
             sym = str(sym)
-            # Find the date part (6 digits starting after ticker)
-            import re
-            m = re.search(r"(\d{6})([CP])(\d+)", sym)
+            m = _OPTION_SYMBOL_RE.search(sym)
             if not m:
-                return pd.Series([None, None, None])
+                return pd.Series([pd.NaT, None, None])
             exp_str, opt_type, strike_str = m.groups()
             expiration = pd.to_datetime(exp_str, format="%y%m%d")
             opt_type = "Call" if opt_type == "C" else "Put"
@@ -225,7 +243,7 @@ class LiveOptionsFetcher:
 
         return df.reset_index(drop=True)
 
-    def fetch_all_chains(self, max_expirations: int = 6) -> pd.DataFrame:
+    def fetch_all_chains(self) -> pd.DataFrame:
         """CBOE returns all expirations in one request, so this is a thin wrapper."""
         df = self.fetch_chain()
         if df.empty:
@@ -237,10 +255,11 @@ def fetch_ticker_info(symbol: str) -> dict:
     """Return a small dict with spot price, name, and sector info."""
     fetcher = LiveOptionsFetcher(symbol)
     spot = fetcher.spot_price()
+    info: dict = {}
     try:
         info = yf.Ticker(symbol).info or {}
     except Exception:
-        info = {}
+        pass
     return {
         "symbol": symbol.upper(),
         "spot": spot,

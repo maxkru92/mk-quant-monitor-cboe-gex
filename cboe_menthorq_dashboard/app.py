@@ -50,6 +50,12 @@ def load_data(symbol: str, risk_free_rate: float = 0.045, dividend_yield: float 
     # Fetch options chain (CBOE provides Greeks natively)
     chain = fetcher.fetch_all_chains()
 
+    # Validate required columns for GEX calculation
+    required_cols = {"strike", "type", "open_interest", "gamma"}
+    missing = required_cols - set(chain.columns)
+    if missing:
+        raise ValueError(f"Options chain is missing required columns: {missing}")
+
     # If CBOE Greeks are missing, calculate via Black-Scholes
     greek_cols = ["delta", "gamma", "theta", "vega", "rho"]
     if not all(col in chain.columns and chain[col].notna().any() for col in greek_cols):

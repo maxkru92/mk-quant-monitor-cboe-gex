@@ -17,6 +17,7 @@ from typing import Optional, Tuple
 
 import numpy as np
 import pandas as pd
+import pytz
 
 
 class GEXCalculator:
@@ -84,7 +85,6 @@ class GEXCalculator:
 
     def levels_0dte(self, chain: Optional[pd.DataFrame] = None) -> dict:
         """Return all MenthorQ-style levels for 0DTE options only."""
-        import pytz
         df = chain if chain is not None else self.calculate_gex()
         eastern = pytz.timezone("US/Eastern")
         today = pd.Timestamp.now(tz=eastern).normalize().tz_localize(None)
