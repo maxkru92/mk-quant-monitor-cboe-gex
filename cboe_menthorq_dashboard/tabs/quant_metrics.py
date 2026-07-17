@@ -29,7 +29,10 @@ import streamlit as st
 
 from cboe_menthorq_dashboard.ui.chrome import terminal_header, live_badge, demo_badge
 from cboe_menthorq_dashboard.data import vol_surface, regime, cboe_data
-from cboe_menthorq_dashboard.data.candles import get_volatility_candles
+# Individual function imports moved inside render_* functions to avoid
+# Python 3.14 scoping/bytecode issues on Streamlit Cloud.
+# The module-level imports below are for types/docs only.
+from cboe_menthorq_dashboard.data import candles as _candles_mod
 
 
 # ------------------------------------------------------------------ #
@@ -154,7 +157,7 @@ def render_vol_surface(spot_default: float = 100.0, chain=None) -> None:
 def render_volatility_chart(_chain=None) -> None:  # chain kwarg kept for symmetry
     # Inner-spinner defense (rare, covers 5-min cache expiry during session)
     with st.spinner("Loading live ^GSPC 30-day OHLC\u2026"):
-        ohlc_data, source = get_volatility_candles("^GSPC", 30)
+        ohlc_data, source = _candles_mod.get_volatility_candles("^GSPC", 30)
     badge_html = (live_badge("LIVE · YFINANCE OHLC")
                   if source == "yfinance"
                   else demo_badge("FALLBACK · DEMO OHLC"))
@@ -262,13 +265,13 @@ def render_volatility_chart(_chain=None) -> None:  # chain kwarg kept for symmet
         )
 
 
-def _expected_rv20(ohlc_data: pd.DataFrame) -> float:
+def _expected_rv20(_ohlc_df):
     """20-day realised vol (annualised) from the last 20 closes."""
-    closes = ohlc_data["close"].astype(float).values
-    if len(closes) < 21:
+    _closes = _ohlc_df["close"].astype(float).values
+    if len(_closes) < 21:
         return 0.0
-    rets = np.diff(np.log(closes[-21:]))
-    return float(np.std(rets, ddof=1) * np.sqrt(252.0))
+    _rets = _np_diff(_closes)
+    return float(np.std(_rets, ddof=1) * np.sqrt(252.0))
 
 
 # ------------------------------------------------------------------ #
