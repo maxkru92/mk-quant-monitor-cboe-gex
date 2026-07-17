@@ -135,8 +135,9 @@ def style_header():
         'MenthorQ-style gamma levels</div>',
         unsafe_allow_html=True,
     )
-    # Live market clock — JS-driven, ticks locally in the browser (no per-sec reruns)
-    st.components.v1.html(render_market_clock(), height=44)
+    # Live market clock — server-side rendered via Python zoneinfo
+    # (updates on every Streamlit rerun; no JS needed)
+    st.markdown(render_market_clock(), unsafe_allow_html=True)
 
 
 # ------------------------------------------------------------------ #

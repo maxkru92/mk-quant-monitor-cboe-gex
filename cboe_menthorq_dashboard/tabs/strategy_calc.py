@@ -220,7 +220,7 @@ def render_strategy_calculator(spot_default: float = 100.0) -> None:
         if pill_cols[i].button(
             label,
             key=f"pill_{key}",
-            use_container_width=True,
+            width='stretch',
             type="primary" if active else "secondary",
         ):
             st.session_state.strat_key = key
@@ -427,7 +427,7 @@ def _render_payoff(legs, analysis, spot, slider_step) -> None:
         font=dict(family="JetBrains Mono"),
         showlegend=False,
     )
-    st.plotly_chart(fig, use_container_width=True, theme=None, key="strat_payoff")
+    st.plotly_chart(fig, width='stretch', theme=None, key="strat_payoff")
 
 
 def _render_summary(analysis) -> None:
@@ -520,7 +520,7 @@ def render_monte_carlo(spot_default: float = 100.0) -> None:
             horizontal=True, label_visibility="collapsed",
         )
     with controls[2]:
-        if st.button("▶ Run (re-seed)", type="primary", use_container_width=True):
+        if st.button("▶ Run (re-seed)", type="primary", width='stretch'):
             st.session_state.mc_seed = int(np.random.default_rng().integers(0, 2**31 - 1))
     with controls[3]:
         st.markdown(
@@ -607,7 +607,7 @@ def render_monte_carlo(spot_default: float = 100.0) -> None:
             bgcolor="rgba(0,0,0,0)",
         ),
     )
-    st.plotly_chart(fig, use_container_width=True, theme=None, key="mc_bands")
+    st.plotly_chart(fig, width='stretch', theme=None, key="mc_bands")
 
     def fmt_money_signed(x: float) -> str:
         abs_v = abs(x)

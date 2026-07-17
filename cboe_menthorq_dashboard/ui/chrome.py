@@ -9,6 +9,9 @@ safe — no external assets, no user-controlled content is rendered as raw HTML.
 
 from __future__ import annotations
 
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 
 # ------------------------------------------------------------------ #
 # Terminal header — 3 colored dots + mono title + badges
@@ -59,14 +62,62 @@ def card_close() -> str:
 
 
 # ------------------------------------------------------------------ #
-# Market clock — JS-injected, ticks locally in the user's browser
+# Market clock — server-side rendered (no JS, updates on Streamlit rerun)
 # ------------------------------------------------------------------ #
-#   Four financial-center clocks. NYC/LON/FRA/TYO shown in the compact
-#   strip; the full set is in the title=tooltip (hover). The script
-#   self-renders every 1s — Streamlit does NOT rerun, so the CBOE API
-#   is never spammed. Period-window logic mirrors market-clock.tsx.
+#   Shows NYC and LON current local time + market open/closed status.
+#   Rendered on every Streamlit rerun — no JS, no browser tick needed.
+#   Timezone handling via Python zoneinfo (stdlib, Python 3.9+).
+#   Market hours (local time):
+#     NYSE: 09:30–16:00 ET (Mon–Fri)
+#     LSE:  08:00–16:30 BST (Mon–Fri)
 # ------------------------------------------------------------------ #
-_MARKET_CLOCK_HTML = """
+
+_MARKETS = [
+    ("NYC", "America/New_York", 9 * 60 + 30, 16 * 60),      # 09:30-16:00 ET
+    ("LON", "Europe/London",    8 * 60,       16 * 60 + 30), # 08:00-16:30 LCL
+]
+
+
+def _is_open(now_local: datetime, open_min: int, close_min: int) -> bool:
+    """Check if current local minute-of-day falls within market hours."""
+    wd = now_local.weekday()  # Mon=0 … Sun=6
+    if wd >= 5:  # Saturday / Sunday
+        return False
+    mins = now_local.hour * 60 + now_local.minute
+    return open_min <= mins < close_min
+
+
+def render_market_clock() -> str:
+    """Return server-side rendered market clock strip.
+
+    Inject via ``st.markdown(render_market_clock(), unsafe_allow_html=True)``.
+    The time displays update on every Streamlit rerun (interaction, slider
+    change, tab switch, etc.) — no JS required.
+    """
+    parts = []
+    for code, tz_name, open_min, close_min in _MARKETS:
+        tz = ZoneInfo(tz_name)
+        now_local = datetime.now(tz)
+        timestr = now_local.strftime("%H:%M:%S")
+        is_open = _is_open(now_local, open_min, close_min)
+        dot_color = "#00e676" if is_open else "rgba(255,255,255,0.40)"
+        dot_bg = "#00e676" if is_open else "rgba(255,255,255,0.30)"
+        status = "OPEN" if is_open else "closed"
+        parts.append(
+            f'<span style="display:inline-flex;align-items:center;gap:5px;'
+            f'color:{dot_color};" '
+            f'title="{code} {timestr} \u25cf {status}">'
+            f'<span style="width:6px;height:6px;border-radius:50%;'
+            f'background:{dot_bg};"></span>'
+            f'<span style="font-size:0.50rem;font-weight:700;'
+            f'letter-spacing:0.10em;">{code}</span>'
+            f'<span style="font-family:JetBrains Mono,monospace;'
+            f'font-size:0.70rem;font-variant-numeric:tabular-nums;">'
+            f'{timestr}</span></span>'
+        )
+    clock_html = "\n".join(parts)
+
+    return f"""
 <div id="vc-market-clock" style="
     display:flex;align-items:center;justify-content:space-between;
     padding:8px 16px;border-radius:10px;
@@ -78,72 +129,7 @@ _MARKET_CLOCK_HTML = """
     text-transform:uppercase;letter-spacing:0.16em;">
     Krupp Capital · Quant Research Desk
   </span>
-  <div id="vc-clock-row" style="
+  <div style="
     display:flex;gap:16px;font-family:'JetBrains Mono',monospace;
-    font-size:0.65rem;letter-spacing:0.1em;"></div>
-</div>
-<script>
-(function () {
-  const markets = [
-    { code: 'NYC', tz: 'America/New_York', openStart: 14*60+30, openEnd: 21*60   },
-    { code: 'LON', tz: 'Europe/London',    openStart: 8*60,     openEnd: 16*60+30 },
-    { code: 'FRA', tz: 'Europe/Berlin',    openStart: 8*60,     openEnd: 16*60+30 },
-    { code: 'TYO', tz: 'Asia/Tokyo',       openStart: 0,        openEnd: 6*60    }
-  ];
-  // compact header cities (matches market-clock.tsx COMPACT_MARKETS const)
-  const compact = ['NYC', 'LON'];
-
-  function fmt(d, tz) {
-    return new Intl.DateTimeFormat('en-GB', {
-      timeZone: tz, hour: '2-digit', minute: '2-digit', second: '2-digit',
-      hour12: false
-    }).format(d);
-  }
-  function isOpen(d, m) {
-    const day = d.getUTCDay();
-    if (day === 0 || day === 6) return false;
-    const mins = d.getUTCHours() * 60 + d.getUTCMinutes();
-    return mins >= m.openStart && mins < m.openEnd;
-  }
-
-  function render() {
-    const now = new Date();
-    const row = document.getElementById('vc-clock-row');
-    if (!row) return;
-
-    // Tooltip string built once — full 4-city dump w/ open/closed state.
-    const tip = markets.map(m =>
-      m.code + ' ' + fmt(now, m.tz) + ' ' + (isOpen(now, m) ? '● OPEN' : '○ closed')
-    ).join('\\n');
-
-    row.innerHTML = '';
-    markets.filter(m => compact.includes(m.code)).forEach(m => {
-      const open  = isOpen(now, m);
-      const color = open ? '#00e676' : 'rgba(255,255,255,0.40)';
-      const dotBg = open ? '#00e676' : 'rgba(255,255,255,0.30)';
-      const pulse = open ? 'animation:vcPulse 1s infinite;' : '';
-
-      const div = document.createElement('div');
-      div.style.cssText = 'display:inline-flex;align-items:center;gap:5px;color:' + color + ';';
-      div.title = tip;
-      div.innerHTML =
-        '<span style="width:6px;height:6px;border-radius:50%;background:' + dotBg + ';' + pulse + '"></span>' +
-        '<span style="font-size:0.50rem;font-weight:700;letter-spacing:0.10em;">' + m.code + '</span>' +
-        '<span style="font-family:JetBrains Mono,monospace;font-size:0.70rem;font-variant-numeric:tabular-nums;">' + fmt(now, m.tz) + '</span>';
-      row.appendChild(div);
-    });
-  }
-
-  render();
-  // Tick every second. The SetInterval runs entirely in the browser — no
-  // Streamlit rerun, no CBOE API call, no Python state churn.
-  setInterval(render, 1000);
-})();
-</script>
-"""
-
-
-def render_market_clock() -> str:
-    """Return HTML/JS for the live market clock strip. Inject via
-    ``st.components.v1.html(MARKET_CLOCK_HTML, height=44)``."""
-    return _MARKET_CLOCK_HTML
+    font-size:0.65rem;letter-spacing:0.1em;">{clock_html}</div>
+</div>"""

@@ -45,7 +45,7 @@ def _render_trending_markets() -> None:
     df = pd.DataFrame(rows).head(10)
     st.dataframe(
         df,
-        use_container_width=True,
+        width='stretch',
         column_config={
             "Volume $M": st.column_config.NumberColumn(format="$%.2fM"),
             "Liquidity $M": st.column_config.NumberColumn(format="$%.2fM"),
@@ -89,7 +89,7 @@ def _render_volume_chart() -> None:
         ),
         font=dict(family="JetBrains Mono"),
     )
-    st.plotly_chart(fig, use_container_width=True, theme=None, key="crypto_volume")
+    st.plotly_chart(fig, width='stretch', theme=None, key="crypto_volume")
 
 
 # ── 3. Search ────────────────────────────────────────────────────── #
@@ -125,7 +125,7 @@ def _render_search() -> None:
             "Volume $M": round(vol / 1e6, 2),
         })
 
-    st.dataframe(pd.DataFrame(sr), use_container_width=True,
+    st.dataframe(pd.DataFrame(sr), width='stretch',
                  column_config={"Volume $M": st.column_config.NumberColumn(format="$%.2fM")},
                  hide_index=True)
 

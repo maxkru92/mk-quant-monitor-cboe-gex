@@ -22,4 +22,4 @@ def render(chain, spot: float) -> None:
     st.subheader("GEX by Strike")
     gex_calc = GEXCalculator(chain, spot)
     by_strike = gex_calc.gex_by_strike()
-    st.dataframe(by_strike, use_container_width=True)
+    st.dataframe(by_strike, width='stretch')

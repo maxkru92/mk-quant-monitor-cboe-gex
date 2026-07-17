@@ -45,6 +45,6 @@ def render(levels: dict, levels_0dte: dict) -> None:
     gex_levels = levels.get("gex_levels", [])
     if gex_levels:
         gex_df = pd.DataFrame(enumerate(gex_levels[:10], start=1), columns=["Rank", "Strike"])
-        st.dataframe(gex_df, use_container_width=True, hide_index=True)
+        st.dataframe(gex_df, width='stretch', hide_index=True)
     else:
         st.info("No GEX levels calculated.")

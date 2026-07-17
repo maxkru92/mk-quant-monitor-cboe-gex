@@ -128,7 +128,7 @@ def _render_yield_curve() -> None:
         ),
         font=dict(family="JetBrains Mono"),
     )
-    st.plotly_chart(fig, use_container_width=True, theme=None, key="macro_yield_curve")
+    st.plotly_chart(fig, width='stretch', theme=None, key="macro_yield_curve")
 
     # Latest date
     latest_date = yc["date"].iloc[-1] if "date" in yc.columns else ""
@@ -168,7 +168,7 @@ def _render_fed_funds_history() -> None:
                    zerolinecolor="#2a3456"),
         font=dict(family="JetBrains Mono"),
     )
-    st.plotly_chart(fig, use_container_width=True, theme=None, key="macro_fed_funds")
+    st.plotly_chart(fig, width='stretch', theme=None, key="macro_fed_funds")
 
 
 # ── 4. CPI / Core PCE History ───────────────────────────────────── #
@@ -219,7 +219,7 @@ def _render_inflation_history() -> None:
         legend=dict(font=dict(color="#8090b0", size=9, family="JetBrains Mono"),
                     bgcolor="rgba(0,0,0,0)", orientation="h", y=1.12),
     )
-    st.plotly_chart(fig, use_container_width=True, theme=None, key="macro_inflation")
+    st.plotly_chart(fig, width='stretch', theme=None, key="macro_inflation")
 
 
 # ── 5. More Indicators ──────────────────────────────────────────── #

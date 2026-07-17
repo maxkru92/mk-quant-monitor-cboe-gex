@@ -28,7 +28,8 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from cboe_menthorq_dashboard.ui.chrome import terminal_header, live_badge, demo_badge
-from cboe_menthorq_dashboard.data import vol_surface, candles, regime, cboe_data
+from cboe_menthorq_dashboard.data import vol_surface, regime, cboe_data
+from cboe_menthorq_dashboard.data.candles import get_volatility_candles
 
 
 # ------------------------------------------------------------------ #
@@ -113,7 +114,7 @@ def render_vol_surface(spot_default: float = 100.0, chain=None) -> None:
         height=380,
         font=dict(family="JetBrains Mono", color="#e8eeff", size=10),
     )
-    st.plotly_chart(fig, use_container_width=True, theme=None, key="quant_vol_surface")
+    st.plotly_chart(fig, width='stretch', theme=None, key="quant_vol_surface")
 
     # Single footer stat — ATM Vol at the shortest picked expiry (or the
     # surface mean if all NaN). Strictly derived from Z (no hardcoded numbers).
@@ -153,7 +154,7 @@ def render_vol_surface(spot_default: float = 100.0, chain=None) -> None:
 def render_volatility_chart(_chain=None) -> None:  # chain kwarg kept for symmetry
     # Inner-spinner defense (rare, covers 5-min cache expiry during session)
     with st.spinner("Loading live ^GSPC 30-day OHLC\u2026"):
-        ohlc_data, source = candles.get_volatility_candles("^GSPC", 30)
+        ohlc_data, source = get_volatility_candles("^GSPC", 30)
     badge_html = (live_badge("LIVE · YFINANCE OHLC")
                   if source == "yfinance"
                   else demo_badge("FALLBACK · DEMO OHLC"))
@@ -238,7 +239,7 @@ def render_volatility_chart(_chain=None) -> None:  # chain kwarg kept for symmet
         ),
         font=dict(family="JetBrains Mono"),
     )
-    st.plotly_chart(fig, use_container_width=True, theme=None, key="quant_vol_chart")
+    st.plotly_chart(fig, width='stretch', theme=None, key="quant_vol_chart")
 
     ind = [
         ("IV (ATM)", f"{cboe_data.get_atm_iv(_chain, last_close)*100:.1f}", "#fbbf24"),
@@ -374,7 +375,7 @@ def render_regime_detection(_chain=None) -> None:
         font=dict(family="JetBrains Mono"),
         showlegend=False,
     )
-    st.plotly_chart(fig, use_container_width=True, theme=None, key="quant_regime_line")
+    st.plotly_chart(fig, width='stretch', theme=None, key="quant_regime_line")
 
     _render_regime_prob_bars(regime_data)
     _render_regime_matrix(regime_data)

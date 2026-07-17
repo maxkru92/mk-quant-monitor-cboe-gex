@@ -126,13 +126,13 @@ def render(spot_default: float = 100.0, chain=None) -> None:
         if toggles[0].button(
             "CALL",
             type="primary" if st.session_state.gk_type == "call" else "secondary",
-            use_container_width=True,
+            width='stretch',
         ):
             st.session_state.gk_type = "call"
         if toggles[1].button(
             "PUT",
             type="primary" if st.session_state.gk_type == "put" else "secondary",
-            use_container_width=True,
+            width='stretch',
         ):
             st.session_state.gk_type = "put"
 
@@ -392,4 +392,4 @@ def _render_payoff(S, K, premium, opt_type) -> None:
         font=dict(family="JetBrains Mono"),
         showlegend=False,
     )
-    st.plotly_chart(fig, use_container_width=True, theme=None, key="greeks_payoff")
+    st.plotly_chart(fig, width='stretch', theme=None, key="greeks_payoff")

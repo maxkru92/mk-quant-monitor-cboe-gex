@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import datetime as dt
 
+import pytz
 import streamlit as st
 
 from cboe_menthorq_dashboard.gex_calculator import GEXCalculator
@@ -35,15 +36,15 @@ def render(chain, spot: float, symbol: str) -> None:
             symbol=symbol,
             by_strike=by_strike,
             spot=spot,
-            date_label=dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+            date_label=dt.datetime.now(pytz.timezone("Europe/London")).strftime("%Y-%m-%d %H:%M BST"),
         )
-        st.image(png_bytes, use_container_width=True)
+        st.image(png_bytes, width='stretch')
     except Exception as chart_err:
         st.warning(f"Could not render institutional chart: {chart_err}")
         # Fallback to basic bar charts
         chart_data = by_strike[["net_gex"]].reset_index()
-        st.bar_chart(chart_data, x="strike", y="net_gex", use_container_width=True)
+        st.bar_chart(chart_data, x="strike", y="net_gex", width='stretch')
 
         oi_data = by_strike[["call_oi", "put_oi"]].reset_index()
         oi_data["put_oi"] = -oi_data["put_oi"]
-        st.bar_chart(oi_data, x="strike", y=["call_oi", "put_oi"], use_container_width=True)
+        st.bar_chart(oi_data, x="strike", y=["call_oi", "put_oi"], width='stretch')

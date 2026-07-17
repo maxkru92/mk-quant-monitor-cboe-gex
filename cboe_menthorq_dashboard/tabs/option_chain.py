@@ -34,6 +34,6 @@ def render(chain) -> None:
     ]
     st.dataframe(
         chain[[c for c in display_cols if c in chain.columns]],
-        use_container_width=True,
+        width='stretch',
         hide_index=True,
     )

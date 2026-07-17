@@ -2372,7 +2372,7 @@ with tabs[3]:
                 html_content = html_content.replace(old, f'>{vix_val_mg} <span class="status-indicator status-green"></span>', 1)
             for old in ['>95.3 <span class="status-indicator status-orange"></span>']:
                 html_content = html_content.replace(old, f'>{vvix_val_mg} <span class="status-indicator status-orange"></span>', 1)
-            st.components.v1.html(html_content, height=900, scrolling=True)
+            st.markdown(html_content, unsafe_allow_html=True)
         else:
             st.error("marketguardian_pro.html not found")
     except Exception as e:
