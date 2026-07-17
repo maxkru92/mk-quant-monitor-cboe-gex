@@ -153,7 +153,7 @@ def render_vol_surface(spot_default: float = 100.0, chain=None) -> None:
 def render_volatility_chart(_chain=None) -> None:  # chain kwarg kept for symmetry
     # Inner-spinner defense (rare, covers 5-min cache expiry during session)
     with st.spinner("Loading live ^GSPC 30-day OHLC\u2026"):
-        candles, source = candles.get_volatility_candles("^GSPC", 30)
+        ohlc_data, source = candles.get_volatility_candles("^GSPC", 30)
     badge_html = (live_badge("LIVE · YFINANCE OHLC")
                   if source == "yfinance"
                   else demo_badge("FALLBACK · DEMO OHLC"))
@@ -165,9 +165,9 @@ def render_volatility_chart(_chain=None) -> None:  # chain kwarg kept for symmet
         unsafe_allow_html=True,
     )
 
-    last = candles.iloc[-1]
+    last = ohlc_data.iloc[-1]
     last_close = float(last["close"])
-    prev_close = float(candles.iloc[-2]["close"]) if len(candles) >= 2 else last_close
+    prev_close = float(ohlc_data.iloc[-2]["close"]) if len(ohlc_data) >= 2 else last_close
     chg = last_close - prev_close
     pct = chg / prev_close * 100.0 if prev_close else 0.0
     chg_color = "#34d399" if chg >= 0 else "#fb7185"
@@ -207,9 +207,9 @@ def render_volatility_chart(_chain=None) -> None:  # chain kwarg kept for symmet
     fig = go.Figure(
         data=[
             go.Candlestick(
-                x=candles["t"],
-                open=candles["open"], high=candles["high"],
-                low=candles["low"], close=candles["close"],
+                x=ohlc_data["t"],
+                open=ohlc_data["open"], high=ohlc_data["high"],
+                low=ohlc_data["low"], close=ohlc_data["close"],
                 increasing_line_color="#34d399", increasing_fillcolor="#34d399",
                 decreasing_line_color="#fb7185", decreasing_fillcolor="#fb7185",
                 showlegend=False,
@@ -242,7 +242,7 @@ def render_volatility_chart(_chain=None) -> None:  # chain kwarg kept for symmet
 
     ind = [
         ("IV (ATM)", f"{cboe_data.get_atm_iv(_chain, last_close)*100:.1f}", "#fbbf24"),
-        ("RV20",      f"{_expected_rv20(candles)*100:.1f}", "#22d3ee"),
+        ("RV20",      f"{_expected_rv20(ohlc_data)*100:.1f}", "#22d3ee"),
         ("Δ (ATM)",   "0.50", "#34d399"),  # ATM delta is by definition ≈ 0.5
         ("Γ (peak)",  "—",   "#a78bfa"),
     ]
@@ -261,9 +261,9 @@ def render_volatility_chart(_chain=None) -> None:  # chain kwarg kept for symmet
         )
 
 
-def _expected_rv20(candles: pd.DataFrame) -> float:
+def _expected_rv20(ohlc_data: pd.DataFrame) -> float:
     """20-day realised vol (annualised) from the last 20 closes."""
-    closes = candles["close"].astype(float).values
+    closes = ohlc_data["close"].astype(float).values
     if len(closes) < 21:
         return 0.0
     rets = np.diff(np.log(closes[-21:]))
@@ -280,8 +280,8 @@ REGIME_LABELS = {0: "Bull / Low Vol", 1: "Sideways / Normal", 2: "Bear / High Vo
 def render_regime_detection(_chain=None) -> None:
     # Inner-spinner defense (rare, covers 5-min cache expiry during session)
     with st.spinner("Loading live ^GSPC 90-day regime classifier\u2026"):
-        regime = regime.get_regime_data()
-    source = regime.get("source", "fallback")
+        regime_data = regime.get_regime_data()
+    source = regime_data.get("source", "fallback")
 
     badge_html = (live_badge("LIVE · YFINANCE HMM-90D")
                   if source == "yfinance-90d"
@@ -294,13 +294,13 @@ def render_regime_detection(_chain=None) -> None:
         unsafe_allow_html=True,
     )
 
-    if not regime.get("price_path") or not regime.get("macros"):
+    if not regime_data.get("price_path") or not regime_data.get("macros"):
         st.info("Live regime data unavailable. Showing SPA fallback matrix only.")
-        _render_regime_matrix_only(regime)
+        _render_regime_matrix_only(regime_data)
         return
 
-    price_path = regime["price_path"]
-    macros = regime["macros"]
+    price_path = regime_data["price_path"]
+    macros = regime_data["macros"]
 
     # X-axis: trade-day index (T-N..T-0)
     n = len(price_path)
@@ -376,9 +376,9 @@ def render_regime_detection(_chain=None) -> None:
     )
     st.plotly_chart(fig, use_container_width=True, theme=None, key="quant_regime_line")
 
-    _render_regime_prob_bars(regime)
-    _render_regime_matrix(regime)
-    _render_regime_summary_cards(regime)
+    _render_regime_prob_bars(regime_data)
+    _render_regime_matrix(regime_data)
+    _render_regime_summary_cards(regime_data)
 
 
 def _render_regime_prob_bars(regime: dict) -> None:
