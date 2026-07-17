@@ -59,7 +59,7 @@ class MenthorQString:
     # ------------------------------------------------------------------ #
     def build(self) -> str:
         """Return the formatted MenthorQ data string."""
-        parts: List[str] = [f"${self.symbol}"]
+        parts: List[str] = [f"${self.symbol}:"]
 
         # Full-chain levels
         parts += [
