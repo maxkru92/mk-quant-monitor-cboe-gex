@@ -89,12 +89,20 @@ def black_scholes_greeks(
     gamma = np.exp(-q * T) * n_d1 / (S * sigma * np.sqrt(T))
     vega = S * np.exp(-q * T) * n_d1 * np.sqrt(T) / 100.0
 
+    if is_call:
+        price = S * np.exp(-q * T) * nd1 - K * np.exp(-r * T) * nd2
+    else:
+        price = K * np.exp(-r * T) * (1.0 - nd2) - S * np.exp(-q * T) * (1.0 - nd1)
+
     return {
+        "price": float(price),
         "delta": float(delta),
         "gamma": float(gamma),
         "theta": float(theta),
         "vega": float(vega),
         "rho": float(rho),
+        "d1": float(d1_),
+        "d2": float(d2_),
     }
 
 

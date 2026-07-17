@@ -18,10 +18,14 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from data_fetcher import LiveOptionsFetcher, fetch_ticker_info
-from greeks import add_greeks_to_chain
-from gex_calculator import GEXCalculator
-from menthorq_formatter import MenthorQString
+from cboe_menthorq_dashboard.data_fetcher import LiveOptionsFetcher, fetch_ticker_info
+from cboe_menthorq_dashboard.greeks import add_greeks_to_chain
+from cboe_menthorq_dashboard.gex_calculator import GEXCalculator
+from cboe_menthorq_dashboard.menthorq_formatter import MenthorQString
+from cboe_menthorq_dashboard.ui.theme import inject_css
+from cboe_menthorq_dashboard.ui.chrome import render_market_clock
+from cboe_menthorq_dashboard.tabs import quant_metrics, strategy_calc, greeks_calc
+from cboe_menthorq_dashboard.tabs import _real_data
 
 warnings.filterwarnings("ignore")
 
@@ -30,11 +34,16 @@ warnings.filterwarnings("ignore")
 # Page config
 # ------------------------------------------------------------------ #
 st.set_page_config(
-    page_title="CBOE MenthorQ Dashboard",
+    page_title="Krupp Capital Quant Dashboard - powered by CBOE Data",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+# ------------------------------------------------------------------ #
+# Theme — apply once at top of every render
+# ------------------------------------------------------------------ #
+inject_css()
 
 
 # ------------------------------------------------------------------ #
@@ -98,30 +107,19 @@ def load_data(symbol: str, risk_free_rate: float = 0.045, dividend_yield: float 
 
 
 def style_header():
-    """Render the app header."""
+    """Render the app header + live market clock strip (above all tabs)."""
     st.markdown(
-        """
-        <style>
-        .main-title {
-            font-size: 2.5rem;
-            font-weight: 700;
-            color: #1f77b4;
-            margin-bottom: 0.2rem;
-        }
-        .sub-title {
-            font-size: 1rem;
-            color: #7f8c8d;
-            margin-bottom: 1.5rem;
-        }
-        </style>
-        """,
+        '<div class="main-title">Krupp Capital Quant Dashboard - powered by CBOE Data</div>',
         unsafe_allow_html=True,
     )
-    st.markdown('<div class="main-title">CBOE MenthorQ Dashboard</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="sub-title">Live options data · Greeks · GEX · MenthorQ-style gamma levels</div>',
+        '<div class="sub-title">Live options &nbsp;·&nbsp; Greeks &nbsp;·&nbsp; '
+        'GEX &nbsp;·&nbsp; Vol surface &nbsp;·&nbsp; Strategy &amp; VaR &nbsp;·&nbsp; '
+        'MenthorQ-style gamma levels</div>',
         unsafe_allow_html=True,
     )
+    # Live market clock — JS-driven, ticks locally in the browser (no per-sec reruns)
+    st.components.v1.html(render_market_clock(), height=44)
 
 
 # ------------------------------------------------------------------ #
@@ -145,7 +143,7 @@ def main():
         st.info("Enter a ticker symbol (e.g. SPX, SPY, VIX, AAPL) to begin.")
         return
 
-    # Load data
+    # Load CBOE options data (sync — already wrapped in spinner)
     try:
         with st.spinner(f"Fetching live options data for {symbol}..."):
             data = load_data(symbol, risk_free_rate=risk_free_rate, dividend_yield=dividend_yield)
@@ -172,6 +170,14 @@ def main():
 
     st.divider()
 
+    # PREWARM yfinance caches (5-min TTL) so the FIRST click into any tab
+    # doesn't block 10-30 s on Yahoo's CDN inside the tab render. After this
+    # prewarm, every yfinance-backed component is a cache hit.
+    with st.spinner("Loading live ^GSPC \u03bc/\u03c3 \u00b7 30d OHLC \u00b7 90d regime (warming 5-min cache)\u2026"):
+        _real_data.get_mc_params(spot_signature=float(spot))
+        _real_data.get_volatility_candles("^GSPC", 30)
+        _real_data.get_regime_data()
+
     # MenthorQ string output
     st.subheader("📋 MenthorQ Gamma Data String")
     st.code(mq_string, language="text")
@@ -184,10 +190,30 @@ def main():
 
     st.divider()
 
-    # Tabs
-    tab_summary, tab_chain, tab_gex, tab_charts = st.tabs(
-        ["Summary", "Options Chain", "GEX Levels", "Charts"]
+    # Tabs  (3 new visual tabs first, then the 4 legacy deep-dive tabs)
+    tab_qm, tab_strat, tab_greeks, tab_summary, tab_chain, tab_gex, tab_charts = st.tabs(
+        [
+            "Quant Metrics",
+            "Strategy + Monte Carlo",
+            "Greeks",
+            "Summary",
+            "Options Chain",
+            "GEX Levels",
+            "Charts",
+        ]
     )
+
+    # ----- Quant Metrics (vol surface + vol chart + regime detection) -----
+    with tab_qm:
+        quant_metrics.render(spot_default=spot, chain=chain)
+
+    # ----- Strategy Calculator + integrated Monte Carlo -----
+    with tab_strat:
+        strategy_calc.render(spot_default=spot, chain=chain)
+
+    # ----- Greeks Calculator -----
+    with tab_greeks:
+        greeks_calc.render(spot_default=spot, chain=chain)
 
     # ------------------------------------------------------------------ #
     # Summary tab
