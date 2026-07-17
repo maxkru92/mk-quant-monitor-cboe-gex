@@ -7,4 +7,4 @@ scipy>=1.10.0
 yfinance>=0.2.28
 
 # Quant Metrics / Strategy + MC / Greeks tabs
-plotly>=5.18.0
+plotly
