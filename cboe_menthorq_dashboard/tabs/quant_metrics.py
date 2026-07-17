@@ -270,7 +270,7 @@ def _expected_rv20(_ohlc_df):
     _closes = _ohlc_df["close"].astype(float).values
     if len(_closes) < 21:
         return 0.0
-    _rets = _np_diff(_closes)
+    _rets = np.diff(_closes)
     return float(np.std(_rets, ddof=1) * np.sqrt(252.0))
 
 
