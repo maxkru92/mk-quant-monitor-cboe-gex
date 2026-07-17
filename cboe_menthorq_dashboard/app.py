@@ -218,37 +218,39 @@ def main():
         # JS-safe string for clipboard API (escape backticks + ${} interpolation)
         js_safe = mq_string.replace("`", "\\`").replace("${", "\\${")
         copy_btn_id = "mq-copy-btn"
-        st.components.v1.html(
+        st.markdown(
             f"""
+<style>
+    #{copy_btn_id} {{
+        width:100%; padding:8px 14px; border:1px solid #00e676; border-radius:8px;
+        background:#0b0f1e; color:#00e676; cursor:pointer;
+        font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:500;
+        letter-spacing:0.04em; transition:all 0.25s ease;
+        white-space:nowrap; text-overflow:ellipsis; overflow:hidden;
+    }}
+    #{copy_btn_id}:hover {{
+        background:rgba(0,230,118,0.10) !important;
+        box-shadow:0 0 20px rgba(0,230,118,0.12);
+    }}
+</style>
 <button id="{copy_btn_id}"
-        onclick="navigator.clipboard.writeText(`{js_safe}`)
-            .then(() => {{
-                const btn = document.getElementById('{copy_btn_id}');
-                btn.innerHTML = '✅ Copied!';
-                btn.style.borderColor = '#00e676';
-                btn.style.background = 'rgba(0,230,118,0.12)';
-                setTimeout(() => {{
-                    btn.innerHTML = '📋 Copy to TradingView';
-                    btn.style.borderColor = '#00e676';
-                    btn.style.background = '#0b0f1e';
+        onclick="var btn=this; navigator.clipboard.writeText(`{js_safe}`)
+            .then(function() {{
+                btn.innerHTML='✅ Copied!';
+                btn.style.background='rgba(0,230,118,0.12)';
+                setTimeout(function() {{
+                    btn.innerHTML='📋 Copy to TradingView';
+                    btn.style.background='#0b0f1e';
                 }}, 2200);
             }})
-            .catch(() => {{
-                const btn = document.getElementById('{copy_btn_id}');
-                btn.innerHTML = '⚠️ Select text & Cmd+C';
-                setTimeout(() => {{ btn.innerHTML = '📋 Copy to TradingView'; }}, 3000);
-            }})"
-        style="width:100%;padding:8px 14px;border:1px solid #00e676;border-radius:8px;
-               background:#0b0f1e;color:#00e676;cursor:pointer;
-               font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:500;
-               letter-spacing:0.04em;transition:all 0.25s ease;
-               white-space:nowrap;text-overflow:ellipsis;overflow:hidden;"
-        onmouseover="this.style.background='rgba(0,230,118,0.10)';this.style.boxShadow='0 0 20px rgba(0,230,118,0.12)'"
-        onmouseout="this.style.background='#0b0f1e';this.style.boxShadow='none'">
+            .catch(function() {{
+                btn.innerHTML='⚠️ Select text & Cmd+C';
+                setTimeout(function() {{ btn.innerHTML='📋 Copy to TradingView'; }}, 3000);
+            }});">
     📋 Copy to TradingView
 </button>
 """,
-            height=44,
+            unsafe_allow_html=True,
         )
 
     with tcol2:

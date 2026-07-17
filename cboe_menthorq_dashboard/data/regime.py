@@ -49,7 +49,9 @@ def _classify_regimes(closes: np.ndarray, returns: np.ndarray) -> dict:
       1 = Sideways        (everything else)
       2 = Bear / High Vol (20d return < −5% AND 20d vol > p60-of-self)
     """
-    n = len(closes)
+    # returns is len(closes) - 1 (np.diff reduces by 1)
+    # All rolling windows are computed from returns, so they share its length.
+    n = len(returns)
     macro = np.full(n, 1, dtype=int)  # default sideways
     if n < 25:
         return {"macros": macro.tolist(), "trans": [[0.7,0.2,0.1],[0.2,0.6,0.2],[0.1,0.2,0.7]],
@@ -116,6 +118,8 @@ def get_regime_data() -> dict:
     closes = hist["close"].values
     returns = np.diff(np.log(closes))
     out = _classify_regimes(closes, returns)
+    # ``out["macros"]`` has 1 fewer element than closes (returns = diff of log closes),
+    # so ``macro[i]`` corresponds to the regime at ``close[i+1]``.
     out["price_path"] = closes.tolist()
     out["source"] = "yfinance-90d"
     return out
