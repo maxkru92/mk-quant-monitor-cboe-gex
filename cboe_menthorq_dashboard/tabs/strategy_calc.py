@@ -29,7 +29,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from cboe_menthorq_dashboard.ui.chrome import terminal_header, live_badge, demo_badge
-from cboe_menthorq_dashboard.tabs import _real_data
+from cboe_menthorq_dashboard.data.mc_params import get_mc_params
 
 
 # ------------------------------------------------------------------ # \
@@ -485,7 +485,7 @@ def render_monte_carlo(spot_default: float = 100.0) -> None:
     # Inner-spinner defense: should rarely show because app.py prewarms,
     # but covers the case where the 5-min cache has expired during the session.
     with st.spinner("Loading live ^GSPC \u03bc/\u03c3\u2026"):
-        mc_params = _real_data.get_mc_params(spot_signature=float(notional_signature))
+        mc_params = get_mc_params(spot_signature=float(notional_signature))
     mu = float(mc_params["mu"])
     sigma = float(mc_params["sigma"])
     source_label = mc_params.get("source", "fallback-fixed")

@@ -5,15 +5,15 @@ Quant Metrics tab — REAL DATA
 Three visualisations stacked on one tab, each wired to live data:
 
 1. **Vol Surface** — Plotly 3-D surface built from the live CBOE chain IVs
-   (via ``_real_data.get_vol_surface_mesh``). Fallback to deterministic
+   (via ``data.vol_surface.get_vol_surface_mesh``). Fallback to deterministic
    _smile() mesh if the chain is too thin.
 
 2. **Volatility Chart** — Plotly candlesticks from yfinance ``^GSPC``
-   (via ``_real_data.get_volatility_candles``). Fallback to deterministic
+   (via ``data.candles.get_volatility_candles``). Fallback to deterministic
    placeholder candles if yfinance is offline.
 
 3. **Regime Detection** — 60-tick ``^GSPC`` price path with a Cartesian
-   trend × vol classifier (via ``_real_data.get_regime_data``). Transition
+   trend × vol classifier (via ``data.regime.get_regime_data``). Transition
    matrix from the same window; probability bars from the last 20 days.
 
 Source badge in each header announces the dataline: ``LIVE · CBOE`` /
@@ -28,7 +28,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from cboe_menthorq_dashboard.ui.chrome import terminal_header, live_badge, demo_badge
-from cboe_menthorq_dashboard.tabs import _real_data
+from cboe_menthorq_dashboard.data import vol_surface, candles, regime, cboe_data
 
 
 # ------------------------------------------------------------------ #
@@ -49,9 +49,9 @@ def _hex_to_rgba(hex_color: str, alpha: float = 0.10) -> str:
 # ------------------------------------------------------------------ #
 def render_vol_surface(spot_default: float = 100.0, chain=None) -> None:
     atm = max(1.0, float(spot_default))
-    source = _real_data.get_vol_surface_source(chain)
+    source = vol_surface.get_vol_surface_source(chain)
     if source == "cboe":
-        strikes_axis, times_axis, Z = _real_data.get_vol_surface_mesh(chain, atm)
+        strikes_axis, times_axis, Z = vol_surface.get_vol_surface_mesh(chain, atm)
     else:
         strikes_axis, times_axis, Z = None, None, None
 
@@ -60,7 +60,7 @@ def render_vol_surface(spot_default: float = 100.0, chain=None) -> None:
         strikes_axis = np.linspace(0.8 * atm, 1.2 * atm, 16)
         times_axis = np.linspace(1.0 / 52.0, 1.0, 12)
         K, T = np.meshgrid(strikes_axis, times_axis)
-        Z = _real_data.fallback_smile(K, T, S0=atm) * 100.0
+        Z = vol_surface.fallback_smile(K, T, S0=atm) * 100.0
 
     badge_html = live_badge("LIVE · CBOE VOL SURFACE") if source == "cboe" else demo_badge("FALLBACK · DEMO MESH")
     st.markdown(
@@ -153,7 +153,7 @@ def render_vol_surface(spot_default: float = 100.0, chain=None) -> None:
 def render_volatility_chart(_chain=None) -> None:  # chain kwarg kept for symmetry
     # Inner-spinner defense (rare, covers 5-min cache expiry during session)
     with st.spinner("Loading live ^GSPC 30-day OHLC\u2026"):
-        candles, source = _real_data.get_volatility_candles("^GSPC", 30)
+        candles, source = candles.get_volatility_candles("^GSPC", 30)
     badge_html = (live_badge("LIVE · YFINANCE OHLC")
                   if source == "yfinance"
                   else demo_badge("FALLBACK · DEMO OHLC"))
@@ -241,7 +241,7 @@ def render_volatility_chart(_chain=None) -> None:  # chain kwarg kept for symmet
     st.plotly_chart(fig, use_container_width=True, theme=None, key="quant_vol_chart")
 
     ind = [
-        ("IV (ATM)", f"{_real_data.get_atm_iv(_chain, last_close)*100:.1f}", "#fbbf24"),
+        ("IV (ATM)", f"{cboe_data.get_atm_iv(_chain, last_close)*100:.1f}", "#fbbf24"),
         ("RV20",      f"{_expected_rv20(candles)*100:.1f}", "#22d3ee"),
         ("Δ (ATM)",   "0.50", "#34d399"),  # ATM delta is by definition ≈ 0.5
         ("Γ (peak)",  "—",   "#a78bfa"),
@@ -280,7 +280,7 @@ REGIME_LABELS = {0: "Bull / Low Vol", 1: "Sideways / Normal", 2: "Bear / High Vo
 def render_regime_detection(_chain=None) -> None:
     # Inner-spinner defense (rare, covers 5-min cache expiry during session)
     with st.spinner("Loading live ^GSPC 90-day regime classifier\u2026"):
-        regime = _real_data.get_regime_data()
+        regime = regime.get_regime_data()
     source = regime.get("source", "fallback")
 
     badge_html = (live_badge("LIVE · YFINANCE HMM-90D")

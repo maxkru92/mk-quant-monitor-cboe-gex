@@ -1,4 +1,6 @@
 # Core dependencies (streamlit is pre-installed on Streamlit Cloud)
+httpx>=0.27.0  # required by cboe_data (cboe_mcp extraction) — async HTTP to CBOE/FRED/Polymarket
+matplotlib>=3.8.0  # required by chart_generator.py (institutional 3-panel GEX chart)
 numpy>=1.24.0
 pandas>=2.0.0
 pytz>=2023.3  # used by gex_calculator.py
@@ -8,3 +10,6 @@ yfinance>=0.2.28
 
 # Quant Metrics / Strategy + MC / Greeks tabs
 plotly
+
+# Optional: PNG size enforcement for Telegram sendPhoto
+# Pillow>=9.1.0

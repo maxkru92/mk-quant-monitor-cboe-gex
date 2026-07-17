@@ -11,13 +11,10 @@ Run locally with:
 
 from __future__ import annotations
 
-import datetime as dt
 import sys
 import warnings
 from pathlib import Path
 
-import numpy as np
-import pandas as pd
 import streamlit as st
 
 # Streamlit Cloud runs this file with cwd set to cboe_menthorq_dashboard/,
@@ -33,8 +30,19 @@ from cboe_menthorq_dashboard.gex_calculator import GEXCalculator
 from cboe_menthorq_dashboard.menthorq_formatter import MenthorQString
 from cboe_menthorq_dashboard.ui.theme import inject_css
 from cboe_menthorq_dashboard.ui.chrome import render_market_clock
-from cboe_menthorq_dashboard.tabs import quant_metrics, strategy_calc, greeks_calc
-from cboe_menthorq_dashboard.tabs import _real_data
+from cboe_menthorq_dashboard.tabs import (
+    quant_metrics,
+    strategy_calc,
+    greeks_calc,
+    summary,
+    option_chain,
+    gex_levels,
+    charts,
+    macro,
+    crypto,
+)
+from cboe_menthorq_dashboard.data import mc_params, candles, regime
+from cboe_menthorq_dashboard.data import cboe_data
 
 warnings.filterwarnings("ignore")
 
@@ -179,32 +187,101 @@ def main():
 
     st.divider()
 
-    # PREWARM yfinance caches (5-min TTL) so the FIRST click into any tab
-    # doesn't block 10-30 s on Yahoo's CDN inside the tab render. After this
-    # prewarm, every yfinance-backed component is a cache hit.
-    with st.spinner("Loading live ^GSPC \u03bc/\u03c3 \u00b7 30d OHLC \u00b7 90d regime (warming 5-min cache)\u2026"):
-        _real_data.get_mc_params(spot_signature=float(spot))
-        _real_data.get_volatility_candles("^GSPC", 30)
-        _real_data.get_regime_data()
+    # PREWARM all data caches so the FIRST click into any tab doesn't
+    # block on cold API calls. Every cache has 5-min (or longer) TTL.
+    with st.spinner("Loading live ^GSPC \u03bc/\u03c3 \u00b7 30d OHLC \u00b7 90d regime \u00b7 CBOE chain \u00b7 FRED \u00b7 Polymarket (warming caches)\u2026"):
+        mc_params.get_mc_params(spot_signature=float(spot))
+        candles.get_volatility_candles("^GSPC", 30)
+        regime.get_regime_data()
+        cboe_data.get_options_chain(symbol)
+        cboe_data.get_gex_profile(symbol)
+        cboe_data.get_put_call_ratio(symbol)
 
-    # MenthorQ string output
+    # ═══════════════════════════════════════════════════════════════ #
+    # MenthorQ string output + TradingView copy + download toolbar
+    # ═══════════════════════════════════════════════════════════════ #
     st.subheader("📋 MenthorQ Gamma Data String")
-    st.code(mq_string, language="text")
-    st.download_button(
-        label="⬇️ Download MenthorQ String",
-        data=mq_string,
-        file_name=f"{symbol}_menthorq.txt",
-        mime="text/plain",
+
+    # Styled terminal-card around the code block
+    st.markdown(
+        '<div style="background:#0b0f1e;border:1px solid rgba(255,255,255,0.06);'
+        'border-radius:12px;padding:2px 14px 14px 14px;margin:0 0 6px 0;">',
+        unsafe_allow_html=True,
     )
+    st.code(mq_string, language="text")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # --- Action toolbar: Copy to TradingView + Download ---
+    tcol1, tcol2, tcol3 = st.columns([1, 1, 3])
+
+    with tcol1:
+        # JS-safe string for clipboard API (escape backticks + ${} interpolation)
+        js_safe = mq_string.replace("`", "\\`").replace("${", "\\${")
+        copy_btn_id = "mq-copy-btn"
+        st.components.v1.html(
+            f"""
+<button id="{copy_btn_id}"
+        onclick="navigator.clipboard.writeText(`{js_safe}`)
+            .then(() => {{
+                const btn = document.getElementById('{copy_btn_id}');
+                btn.innerHTML = '✅ Copied!';
+                btn.style.borderColor = '#00e676';
+                btn.style.background = 'rgba(0,230,118,0.12)';
+                setTimeout(() => {{
+                    btn.innerHTML = '📋 Copy to TradingView';
+                    btn.style.borderColor = '#00e676';
+                    btn.style.background = '#0b0f1e';
+                }}, 2200);
+            }})
+            .catch(() => {{
+                const btn = document.getElementById('{copy_btn_id}');
+                btn.innerHTML = '⚠️ Select text & Cmd+C';
+                setTimeout(() => {{ btn.innerHTML = '📋 Copy to TradingView'; }}, 3000);
+            }})"
+        style="width:100%;padding:8px 14px;border:1px solid #00e676;border-radius:8px;
+               background:#0b0f1e;color:#00e676;cursor:pointer;
+               font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:500;
+               letter-spacing:0.04em;transition:all 0.25s ease;
+               white-space:nowrap;text-overflow:ellipsis;overflow:hidden;"
+        onmouseover="this.style.background='rgba(0,230,118,0.10)';this.style.boxShadow='0 0 20px rgba(0,230,118,0.12)'"
+        onmouseout="this.style.background='#0b0f1e';this.style.boxShadow='none'">
+    📋 Copy to TradingView
+</button>
+""",
+            height=44,
+        )
+
+    with tcol2:
+        st.download_button(
+            label="⬇️ Download .txt",
+            data=mq_string,
+            file_name=f"{symbol}_menthorq.txt",
+            mime="text/plain",
+        )
+
+    with tcol3:
+        st.markdown(
+            f'<div style="display:flex;align-items:center;height:44px;'
+            f'font-family:JetBrains Mono,monospace;font-size:10px;'
+            f'color:rgba(255,255,255,0.30);letter-spacing:0.06em;">'
+            f'<span style="color:#00e676;font-size:8px;margin-right:6px;">●</span>'
+            f'Copy for TradingView Pine Script indicator. '
+            f'Format: Call/Resistance · HVL · 1D Move · Gamma Wall · GEX 1—10</div>',
+            unsafe_allow_html=True,
+        )
 
     st.divider()
 
-    # Tabs  (3 new visual tabs first, then the 4 legacy deep-dive tabs)
-    tab_qm, tab_strat, tab_greeks, tab_summary, tab_chain, tab_gex, tab_charts = st.tabs(
+    st.divider()
+
+    # Tabs  (new tabs: macro + crypto from MCP servers)
+    tab_qm, tab_strat, tab_greeks, tab_macro, tab_crypto, tab_summary, tab_chain, tab_gex, tab_charts = st.tabs(
         [
             "Quant Metrics",
             "Strategy + Monte Carlo",
             "Greeks",
+            "Macro",
+            "Crypto",
             "Summary",
             "Options Chain",
             "GEX Levels",
@@ -224,85 +301,37 @@ def main():
     with tab_greeks:
         greeks_calc.render(spot_default=spot, chain=chain)
 
+    # ----- Macro Dashboard (FRED) -----
+    with tab_macro:
+        macro.render()
+
+    # ----- Crypto / Prediction Markets (Polymarket) -----
+    with tab_crypto:
+        crypto.render()
+
     # ------------------------------------------------------------------ #
-    # Summary tab
+    # Summary tab — gamma levels, 0DTE levels, top 10 GEX strikes
     # ------------------------------------------------------------------ #
     with tab_summary:
-        st.subheader("Gamma Levels")
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Call Resistance", f"{levels.get('call_resistance', 'N/A'):,.2f}" if isinstance(levels.get('call_resistance'), (int, float)) else "N/A")
-        c2.metric("Put Support", f"{levels.get('put_support', 'N/A'):,.2f}" if isinstance(levels.get('put_support'), (int, float)) else "N/A")
-        c3.metric("HVL", f"{levels.get('hvl', 'N/A'):,.2f}" if isinstance(levels.get('hvl'), (int, float)) else "N/A")
-        c4.metric("Gamma Wall", f"{levels.get('gamma_wall', 'N/A'):,.2f}" if isinstance(levels.get('gamma_wall'), (int, float)) else "N/A")
-
-        if levels_0dte:
-            st.subheader("0DTE Levels")
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Call Resistance 0DTE", f"{levels_0dte.get('call_resistance', 'N/A'):,.2f}" if isinstance(levels_0dte.get('call_resistance'), (int, float)) else "N/A")
-            c2.metric("Put Support 0DTE", f"{levels_0dte.get('put_support', 'N/A'):,.2f}" if isinstance(levels_0dte.get('put_support'), (int, float)) else "N/A")
-            c3.metric("HVL 0DTE", f"{levels_0dte.get('hvl', 'N/A'):,.2f}" if isinstance(levels_0dte.get('hvl'), (int, float)) else "N/A")
-            c4.metric("Gamma Wall 0DTE", f"{levels_0dte.get('gamma_wall', 'N/A'):,.2f}" if isinstance(levels_0dte.get('gamma_wall'), (int, float)) else "N/A")
-        else:
-            st.info("No 0DTE options available for this ticker.")
-
-        st.subheader("Top 10 GEX Strikes")
-        gex_levels = levels.get("gex_levels", [])
-        if gex_levels:
-            gex_df = pd.DataFrame(enumerate(gex_levels[:10], start=1), columns=["Rank", "Strike"])
-            st.dataframe(gex_df, use_container_width=True, hide_index=True)
-        else:
-            st.info("No GEX levels calculated.")
+        summary.render(levels=levels, levels_0dte=levels_0dte)
 
     # ------------------------------------------------------------------ #
     # Options Chain tab
     # ------------------------------------------------------------------ #
     with tab_chain:
-        st.subheader("Live Options Chain")
-        display_cols = [
-            "expiration",
-            "strike",
-            "type",
-            "last_price",
-            "bid",
-            "ask",
-            "volume",
-            "open_interest",
-            "iv",
-            "delta",
-            "gamma",
-            "theta",
-            "vega",
-            "gex",
-        ]
-        st.dataframe(
-            chain[[c for c in display_cols if c in chain.columns]],
-            use_container_width=True,
-            hide_index=True,
-        )
+        option_chain.render(chain=chain)
 
     # ------------------------------------------------------------------ #
     # GEX Levels tab
     # ------------------------------------------------------------------ #
     with tab_gex:
-        st.subheader("GEX by Strike")
-        gex_calc = GEXCalculator(chain, spot)
-        by_strike = gex_calc.gex_by_strike()
-        st.dataframe(by_strike, use_container_width=True)
+        gex_levels.render(chain=chain, spot=spot)
 
     # ------------------------------------------------------------------ #
-    # Charts tab
+    # Charts tab — institutional 3-panel GEX chart with fallback
     # ------------------------------------------------------------------ #
     with tab_charts:
-        st.subheader("Net GEX by Strike")
-        gex_calc = GEXCalculator(chain, spot)
-        by_strike = gex_calc.gex_by_strike()
-        chart_data = by_strike[["net_gex"]].reset_index()
-        st.bar_chart(chart_data, x="strike", y="net_gex", use_container_width=True)
-
-        st.subheader("Open Interest by Strike")
-        oi_data = by_strike[["call_oi", "put_oi"]].reset_index()
-        oi_data["put_oi"] = -oi_data["put_oi"]
-        st.bar_chart(oi_data, x="strike", y=["call_oi", "put_oi"], use_container_width=True)
+        charts.render(chain=chain, spot=spot, symbol=symbol)
 
 
 if __name__ == "__main__":

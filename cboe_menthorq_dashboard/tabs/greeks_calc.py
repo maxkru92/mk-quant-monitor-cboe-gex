@@ -9,7 +9,7 @@ TSX design.
 
 REAL DATA WIRING (2026-07 Krupp Capital refresh):
 - Default σ seeded from the live CBOE chain's ATM call at the nearest
-  future-with-positive-OI expiry (``tabs._real_data.get_atm_iv``).
+  future-with-positive-OI expiry (``data.cboe_data.get_atm_iv``).
 - All other inputs (S, K, T, r) are still slider-driven for the
   scenario-analysis playground.
 
@@ -33,7 +33,7 @@ import streamlit as st
 
 from cboe_menthorq_dashboard.greeks import black_scholes_greeks
 from cboe_menthorq_dashboard.ui.chrome import terminal_header, live_badge, demo_badge
-from cboe_menthorq_dashboard.tabs import _real_data
+from cboe_menthorq_dashboard.data import cboe_data
 
 
 # ------------------------------------------------------------------ # \
@@ -44,7 +44,7 @@ def render(spot_default: float = 100.0, chain=None) -> None:
     initial_k = float(int(round(initial_spot))) if initial_spot >= 1.0 else 100.0
 
     # REAL σ from CBOE ATM call at nearest-with-OI expiry; fallback 30 %.
-    initial_sigma = float(_real_data.get_atm_iv(chain, initial_spot)) if chain is not None else 0.30
+    initial_sigma = float(cboe_data.get_atm_iv(chain, initial_spot)) if chain is not None else 0.30
     sigma_source = "cboe" if (chain is not None and initial_sigma > 0) else "fallback"
 
     for k, v in {

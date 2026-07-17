@@ -1,0 +1,18 @@
+# Secrets & Cache
+.wrangler/cache/
+*.env
+.env.local
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Lock files
+*.lock
+.~lock.*
+
+# Node
+node_modules/
+
+# Temp
+*.tmp

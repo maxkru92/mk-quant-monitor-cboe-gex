@@ -37,20 +37,14 @@ class MenthorQString:
     # ------------------------------------------------------------------ #
     @staticmethod
     def _fmt(value: Any, decimals: int = 2) -> str:
-        """Format a numeric value for the TradingView indicator string.
-
-        - Integers → no decimal point:  ``14``, ``7600``
-        - Floats → stripped trailing zeros: ``19.5``, ``14.57`` (never ``19.50``)
-        """
+        """Format a numeric value for the output string."""
         if value is None:
             return "N/A"
         try:
             num = float(value)
             if num == int(num):
                 return str(int(num))
-            # Remove trailing zeros so ``19.50`` → ``19.5``
-            formatted = f"{num:.{decimals}f}"
-            return formatted.rstrip("0").rstrip(".") if "." in formatted else formatted
+            return f"{num:.{decimals}f}"
         except (TypeError, ValueError):
             return str(value)
 

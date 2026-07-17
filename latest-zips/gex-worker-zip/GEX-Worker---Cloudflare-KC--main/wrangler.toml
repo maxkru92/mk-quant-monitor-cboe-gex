@@ -1,0 +1,30 @@
+name = "gex-collector"
+main = "src/index.js"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+[triggers]
+# Cloudflare Workers FREE plan allows only 5 cron triggers per Worker — we use ONE.
+# That cron fires every 15 min from 12:00–21:59 UTC (== 08:00–17:59 ET, DST-aware).
+# scheduled() matches the current ET (h, m) against SESSION_TABLE in src/index.js
+# to dispatch the right institutional-grade broadcast.
+# Slots: 08:00 PRE-MARKET, 09:45 OPEN, twelve 30-min/hour INTRADAY, 16:30 AFTER-MARKET.
+# Off-slot ticks are silent — we get exactly 14 broadcasts per trading day.
+crons = ["*/15 12-21 * * 1-5"]
+
+[[kv_namespaces]]
+binding = "GEX_KV"
+id = "bb9f6786bd5242bc8c89ac3c676916f3"
+
+[ai]
+binding = "AI"
+
+[vars]
+SYMBOLS = "SPX,SPY,QQQ,VIX,GLD,SLV,USO"
+LOG_LEVEL = "info"
+HF_WEBHOOK_URL = "https://maxkru92-hermes-neu-volatility-vince.hf.space/webhook"
+# Dark-institutional chart pipeline: when CHARTS_WEBHOOK_URL is set, the Worker fetches
+# PNG bytes per symbol from this URL after each broadcast and ships them to Telegram
+# via sendPhoto. Match the Flask service in cboe_menthorq_dashboard/charts_webhook.py.
+# Leave empty -> broadcasts fall back to text-only (current behavior).
+CHARTS_WEBHOOK_URL = ""

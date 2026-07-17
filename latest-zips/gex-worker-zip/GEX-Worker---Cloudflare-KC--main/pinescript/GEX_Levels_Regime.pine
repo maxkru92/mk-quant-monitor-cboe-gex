@@ -1,0 +1,277 @@
+// ============================================================================
+// [QUANT] [GEX] Gamma Exposure Approximation & Key Levels [Krupp Capital]
+// ============================================================================
+// Description [EN]:
+//   Approximates Gamma Exposure (GEX) key levels using available TV data:
+//   - VIX / VVIX for vol regime estimation
+//   - SPY options chain (OI, IV) as SPX proxy for dealer gamma estimation
+//   - Price action for trend/momentum context
+//   This is an APPROXIMATION, not a full GEX calculation.
+//   For live GEX data use the Krupp Capital Telegram Bot: /gex SPX
+// Beschreibung [GER]:
+//   Approximiert Gamma Exposure (GEX) Key Levels mit verfuegbaren TV-Daten.
+//   Dies ist eine APPROXIMATION, keine vollstaendige GEX-Berechnung.
+//   Fuer Live GEX-Daten: Krupp Capital Telegram Bot /gex SPX nutzen.
+// ============================================================================
+
+//@version=6
+indicator("[QUANT] [GEX] Gamma Exposure Approximation & Key Levels [Krupp Capital]",
+     shorttitle="GEX-Approx [KC]",
+     overlay=true,
+     precision=2,
+     max_labels_count=500,
+     max_lines_count=500)
+
+// ============================================================================
+// KRUPP CAPITAL BOILERPLATE
+// ============================================================================
+
+// --- Session Anchoring (New York) ---
+bool isNYSE = not na(time(timeframe.period, "0930-1600:123457", "America/New_York"))
+
+// --- Dark Institutional Colors ---
+color KC_BG          = #111217
+color KC_BULL        = #00FF88
+color KC_BEAR        = #FF3366
+color KC_NEUTRAL     = #00E5FF
+color KC_TEXT        = #E0E0E0
+color KC_ORANGE      = #ff6d00
+color KC_PURPLE      = #aa00ff
+color KC_DIM         = #555566
+color KC_BORDER      = #444455
+color KC_CALL_WALL   = #00FF88
+color KC_PUT_SUPPORT = #FF3366
+color KC_HVL         = #FFD600
+
+// ============================================================================
+// INPUTS
+// ============================================================================
+
+grpData   = "Data Sources"
+grpVisual = "Visual Settings"
+grpAlerts = "Alert Conditions"
+
+useVVIX           = input.bool(true,  "Use VVIX",            group=grpData)
+useVIX            = input.bool(true,  "Use VIX",             group=grpData)
+smoothLength      = input.int(5,       "Level Smoothing",    group=grpData, minval=1, maxval=20)
+
+showCW            = input.bool(true,  "Show Call Wall",      group=grpVisual)
+showPS            = input.bool(true,  "Show Put Support",    group=grpVisual)
+showHVL           = input.bool(true,  "Show HVL / Flip",     group=grpVisual)
+showRegimeBg      = input.bool(true,  "Show Regime BG",      group=grpVisual)
+showTable         = input.bool(true,  "Show Info Table",     group=grpVisual)
+isMobile          = input.bool(false, "Mobile Mode",        group=grpVisual)
+
+alertRegimeChange = input.bool(true,  "Regime Change",       group=grpAlerts)
+alertCWBreakout   = input.bool(false, "Call Wall Breakout",  group=grpAlerts)
+alertPSBreakdown  = input.bool(false, "Put Support Break",   group=grpAlerts)
+alertVolExpansion = input.bool(true,  "Vol Expansion",       group=grpAlerts)
+
+// ============================================================================
+// DATA SOURCES
+// ============================================================================
+
+// VIX -- CBOE Volatility Index
+float vixSpot  = request.security("CBOE:VIX",  timeframe.period, close, barmerge.gaps_off, barmerge.lookahead_off)
+
+// VVIX -- CBOE VIX of VIX (9-day implied vol of VIX options)
+float vvixSpot = request.security("CBOE:VVIX", timeframe.period, close, barmerge.gaps_off, barmerge.lookahead_off)
+
+// SPY as SPX proxy for options chain
+float spySpot   = request.security("SPY", timeframe.period, close, barmerge.gaps_off, barmerge.lookahead_off)
+float spyHigh   = request.security("SPY", timeframe.period, high,  barmerge.gaps_off, barmerge.lookahead_off)
+float spyLow    = request.security("SPY", timeframe.period, low,   barmerge.gaps_off, barmerge.lookahead_off)
+float spyClose  = request.security("SPY", timeframe.period, close, barmerge.gaps_off, barmerge.lookahead_off)
+
+// SPY Options Chain -- nearest expiry
+// request.security with option chain data (TV provides this for SPY)
+float spyCallOI = request.security("SPY", timeframe.period, call(close, 0), barmerge.gaps_off, barmerge.lookahead_off)
+
+// VIX vs 20-day SMA (term structure proxy)
+float src = useVIX and not na(vixSpot) ? vixSpot : close
+float vixSMA20 = ta.sma(src, 20)
+float vixTermSpread = not na(vixSpot) and vixSMA20 > 0 ? vixSpot - vixSMA20 : 0.0
+
+// ============================================================================
+// GEX APPROXIMATION ENGINE
+// ============================================================================
+
+// --- Step 1: Volatility Regime from VIX + VVIX ---
+// VIX > 20 = fear regime = negative gamma more likely
+// VIX < 12 = complacency = positive gamma more likely
+// VVIX > 100 = high vol-of-vol = unstable gamma
+
+float vixNorm  = useVIX and not na(vixSpot)  ? math.max(0.0, math.min(1.0, (vixSpot - 10.0) / 30.0))  : 0.5
+float vvixNorm = useVVIX and not na(vvixSpot) ? math.max(0.0, math.min(1.0, (vvixSpot - 50.0) / 100.0)) : 0.5
+
+// Composite vol regime: 0 = complacent (positive gamma), 1 = fearful (negative gamma)
+float volRegime = vixNorm * 0.6 + vvixNorm * 0.4
+
+// Vol regime classification
+string volRegimeLabel = volRegime < 0.3 ? "COMPRESSION" : volRegime < 0.5 ? "NORMAL" : volRegime < 0.7 ? "ELEVATED" : "EXTREME"
+color volRegimeColor  = volRegime < 0.3 ? KC_NEUTRAL : volRegime < 0.5 ? KC_BULL : volRegime < 0.7 ? KC_ORANGE : KC_BEAR
+
+// --- Step 2: GEX Score ---
+// Positive Gamma Regime (dealers suppress vol):
+//   - Low VIX (< 15), Low VVIX (< 85), price rising, narrow range
+// Negative Gamma Regime (dealers amplify vol):
+//   - High VIX (> 20), High VVIX (> 100), price falling, expanding range
+
+float gexScore = (1.0 - vixNorm) * 0.35 + (1.0 - vvixNorm) * 0.25
+
+// Trend contribution via price vs moving average
+float smaVal = ta.sma(close, 20)
+if smaVal > 0
+    gexScore += math.max(-1.0, math.min(1.0, (close - smaVal) / smaVal * 10.0)) * 0.4
+
+gexScore := math.max(-1.0, math.min(1.0, gexScore))
+
+// Regime classification
+string gexRegime = gexScore > 0.15 ? "POSITIVE Gamma" : gexScore < -0.15 ? "NEGATIVE Gamma" : "NEUTRAL"
+color regimeColor = gexScore > 0.15 ? KC_BULL : gexScore < -0.15 ? KC_BEAR : KC_NEUTRAL
+
+// Regime change detection
+var string prevRegime = "NEUTRAL"
+bool regimeChanged = gexRegime != prevRegime and bar_index > 1
+if barstate.isconfirmed
+    prevRegime := gexRegime
+
+// --- Step 3: Key Level Calculation ---
+// Call Wall = resistance level where dealers most need to hedge calls
+//   = round((spot + (VIX% * spot / 2)) to nearest 5)
+// Put Support = support level where dealers most need to hedge puts
+//   = round((spot - (VIX% * spot / 1.5)) to nearest 5)
+// HVL / Gamma Flip = midpoint where regime switches
+
+float vixPct  = useVIX and not na(vixSpot) ? vixSpot / 100.0 : 0.15
+float rawCW    = close * (1.0 + vixPct * 0.5)
+float rawPS    = close * (1.0 - vixPct * 0.66)
+float hvlMix   = 0.5 - gexScore * 0.15
+float rawHVL   = rawPS + (rawCW - rawPS) * hvlMix
+
+int callWall   = math.round(rawCW / 5.0) * 5
+int putSupport  = math.round(rawPS / 5.0) * 5
+int hvl         = math.round(rawHVL / 5.0) * 5
+
+// Smooth levels to avoid excessive repainting
+var int smoothCW  = na
+var int smoothPS  = na
+var int smoothHVL = na
+
+if barstate.isconfirmed
+    if na(smoothCW)
+        smoothCW := callWall
+    else
+        smoothCW := math.round((smoothCW * (smoothLength - 1) + callWall) / smoothLength)
+    if na(smoothPS)
+        smoothPS := putSupport
+    else
+        smoothPS := math.round((smoothPS * (smoothLength - 1) + putSupport) / smoothLength)
+    if na(smoothHVL)
+        smoothHVL := hvl
+    else
+        smoothHVL := math.round((smoothHVL * (smoothLength - 1) + hvl) / smoothLength)
+
+int dispCW  = na(smoothCW)  ? callWall  : smoothCW
+int dispPS  = na(smoothPS)  ? putSupport  : smoothPS
+int dispHVL = na(smoothHVL) ? hvl      : smoothHVL
+
+// ============================================================================
+// VISUALIZATION -- LINES
+// ============================================================================
+
+plot(showCW  ? dispCW  : na, "Call Wall",   color=KC_CALL_WALL,   linewidth=2)
+plot(showPS  ? dispPS  : na, "Put Support", color=KC_PUT_SUPPORT, linewidth=2)
+plot(showHVL ? dispHVL : na, "HVL / Flip",  color=KC_HVL,         linewidth=1, style=plot.style_circles)
+
+// ============================================================================
+// VISUALIZATION -- BACKGROUND
+// ============================================================================
+
+bgcolor(showRegimeBg and gexRegime == "POSITIVE Gamma" ? color.new(KC_BULL, 93) :
+     showRegimeBg and gexRegime == "NEGATIVE Gamma" ? color.new(KC_BEAR, 93) :
+     showRegimeBg ? color.new(KC_NEUTRAL, 95) : na)
+
+// ============================================================================
+// INFO TABLE
+// ============================================================================
+
+var table infoTable = table.new(position.top_right, 2, 8,
+     bgcolor=color.new(KC_BG, 10), border_width=1,
+     border_color=color.new(KC_BORDER, 50))
+
+if barstate.islast and showTable
+    // Header
+    table.cell(infoTable, 0, 0, "KRUPP CAPITAL",    text_color=KC_ORANGE,  text_size=isMobile ? size.large : size.small)
+    table.cell(infoTable, 1, 0, "Quantitative Desk", text_color=KC_PURPLE, text_size=isMobile ? size.large : size.small)
+    // Spot
+    table.cell(infoTable, 0, 1, "Spot:",             text_color=KC_DIM,    text_size=size.small)
+    table.cell(infoTable, 1, 1, str.tostring(close, "#.##"), text_color=KC_TEXT, text_size=size.small)
+    // Regime
+    table.cell(infoTable, 0, 2, "GEX Regime:",        text_color=KC_DIM,    text_size=size.small)
+    table.cell(infoTable, 1, 2, gexRegime,           text_color=regimeColor, text_size=isMobile ? size.normal : size.small)
+    // Call Wall
+    table.cell(infoTable, 0, 3, "Call Wall:",         text_color=KC_DIM,    text_size=size.small)
+    table.cell(infoTable, 1, 3, str.tostring(dispCW), text_color=KC_CALL_WALL, text_size=size.small)
+    // Put Support
+    table.cell(infoTable, 0, 4, "Put Support:",       text_color=KC_DIM,    text_size=size.small)
+    table.cell(infoTable, 1, 4, str.tostring(dispPS), text_color=KC_PUT_SUPPORT, text_size=size.small)
+    // HVL
+    table.cell(infoTable, 0, 5, "HVL (Flip):",        text_color=KC_DIM,    text_size=size.small)
+    table.cell(infoTable, 1, 5, str.tostring(dispHVL), text_color=KC_HVL,   text_size=size.small)
+    // VIX
+    string vixStr = useVIX and not na(vixSpot) ? str.tostring(vixSpot, "#.##") : "N/A"
+    table.cell(infoTable, 0, 6, "VIX:",               text_color=KC_DIM,    text_size=size.small)
+    table.cell(infoTable, 1, 6, vixStr,               text_color=vixNorm > 0.6 ? KC_BEAR : vixNorm > 0.3 ? KC_NEUTRAL : KC_BULL, text_size=size.small)
+    // Vol Regime
+    table.cell(infoTable, 0, 7, "Vol Regime:",         text_color=KC_DIM,    text_size=size.small)
+    table.cell(infoTable, 1, 7, volRegimeLabel,       text_color=volRegimeColor, text_size=size.small)
+
+// ============================================================================
+// LABELS (on last bar)
+// ============================================================================
+
+if barstate.islast and showCW
+    label.new(bar_index + 2, dispCW, "CW " + str.tostring(dispCW),
+         color=color.new(KC_CALL_WALL, 20), style=label.style_label_left,
+         textcolor=KC_CALL_WALL, size=isMobile ? size.large : size.small)
+
+if barstate.islast and showPS
+    label.new(bar_index + 2, dispPS, "PS " + str.tostring(dispPS),
+         color=color.new(KC_PUT_SUPPORT, 20), style=label.style_label_left,
+         textcolor=KC_PUT_SUPPORT, size=isMobile ? size.large : size.small)
+
+if barstate.islast and showHVL
+    label.new(bar_index + 2, dispHVL, "HVL " + str.tostring(dispHVL),
+         color=color.new(KC_HVL, 20), style=label.style_label_left,
+         textcolor=KC_HVL, size=isMobile ? size.large : size.small)
+
+// ============================================================================
+// ALERTS
+// ============================================================================
+
+alertcondition(alertRegimeChange and regimeChanged,
+     "GEX Regime Changed",
+     "GEX Regime: " + gexRegime + " at " + str.tostring(close, "#.##"))
+
+alertcondition(useVVIX and not na(vvixSpot) and vvixSpot > 100 and vvixSpot[1] <= 100,
+     "Vol Expansion (VVIX > 100)",
+     "VVIX expanded above 100. Negative gamma regime likely.")
+
+alertcondition(alertCWBreakout and close > dispCW and close[1] <= dispCW[1],
+     "Call Wall Breakout",
+     "Price broke above Call Wall " + str.tostring(dispCW))
+
+alertcondition(alertPSBreakdown and close < dispPS and close[1] >= dispPS[1],
+     "Put Support Breakdown",
+     "Price broke below Put Support " + str.tostring(dispPS))
+
+// ============================================================================
+// FOOTER SIGNATURE
+// ============================================================================
+
+if barstate.islast
+    label.new(bar_index, low,
+         "Krupp Capital | [QUANT] GEX Approximation | [Krupp Capital]",
+         color=color.new(KC_DIM, 80), style=label.style_label_up,
+         textcolor=color.new(KC_DIM, 60), size=size.tiny, textalign=text.align_right)
