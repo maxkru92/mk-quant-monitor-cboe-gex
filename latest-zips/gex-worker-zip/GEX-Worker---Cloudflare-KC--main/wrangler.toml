@@ -1,6 +1,10 @@
 name = "gex-collector"
 main = "src/index.js"
-compatibility_date = "2024-09-23"
+compatibility_date = "2026-07-17"
+
+[observability]
+head_sampling_rate = 1.0
+logpush = false
 compatibility_flags = ["nodejs_compat"]
 
 [triggers]
