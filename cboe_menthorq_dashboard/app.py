@@ -12,11 +12,20 @@ Run locally with:
 from __future__ import annotations
 
 import datetime as dt
+import sys
 import warnings
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import streamlit as st
+
+# Streamlit Cloud runs this file with cwd set to cboe_menthorq_dashboard/,
+# so absolute imports like `cboe_menthorq_dashboard.data_fetcher` fail unless
+# the repository root is on sys.path. Add it once, idempotently.
+_repo_root = str(Path(__file__).resolve().parent.parent)
+if _repo_root not in sys.path:
+    sys.path.insert(0, _repo_root)
 
 from cboe_menthorq_dashboard.data_fetcher import LiveOptionsFetcher, fetch_ticker_info
 from cboe_menthorq_dashboard.greeks import add_greeks_to_chain
