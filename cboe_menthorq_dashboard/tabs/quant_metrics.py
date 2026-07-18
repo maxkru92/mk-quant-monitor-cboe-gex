@@ -306,8 +306,11 @@ def render_regime_detection(_chain=None) -> None:
     price_path = regime_data["price_path"]
     macros = regime_data["macros"]
 
-    # X-axis: trade-day index (T-N..T-0)
-    n = len(price_path)
+    # X-axis: trade-day index (T-N..T-0).
+    # regime.py emits len(macros) = len(price_path) - 1, with macro[i] ↔ close[i+1]
+    # (see data/regime.py docstring). We trim price_path to align the arrays.
+    n = min(len(macros), len(price_path))
+    price_path = price_path[-n:] if n > 0 else price_path
     y_min = min(price_path) - 15
     y_max = max(price_path) + 15
 
