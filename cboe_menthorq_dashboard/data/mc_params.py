@@ -6,6 +6,11 @@ Public API
 ----------
 ``get_mc_params(symbol, spot_signature)``
     Annualised μ, σ from last 60 trading days of log-returns.
+
+Architecture (2026-07 Candidate 3 — Cache-Seam Decoupling)
+----------------------------------------------------------
+Pure fetch (``_fetch_mc_params``) — no Streamlit dependency.
+Cache adapter (``get_mc_params``) — thin ``@st.cache_data`` wrapper.
 """
 
 from __future__ import annotations
@@ -16,18 +21,14 @@ import streamlit as st
 from cboe_menthorq_dashboard.data.regime import get_index_history
 
 
-@st.cache_data(ttl=300, show_spinner=False)
-def get_mc_params(symbol: str = "^GSPC", spot_signature: float = 0.0) -> dict:
-    """Annualised μ, σ from last 60 trading days of log-returns.
+# ═══════════════════════════════════════════════════════════════
+# PURE FETCH — no Streamlit dependency, importable anywhere
+# ═══════════════════════════════════════════════════════════════
+def _fetch_mc_params(symbol: str = "^GSPC", spot_signature: float = 0.0) -> dict:
+    """Pure: yfinance → numpy → return. No caching, no Streamlit.
 
-    Cache key = ``(symbol, spot_signature/100)``. Bucket ``spot_signature`` by
-    nearest $100 so slider drags of a few dollars don't cache-bust, but a
-    real underlying switch (SPX → NDX) does.
-
-    NOTE: NEITHER param is underscore-prefixed so Streamlit hashes both —
-    critical for per-ticker cache separation.
+    Calls the CACHED ``get_index_history`` for intra-request cache reuse.
     """
-    sig_bucket = round(float(spot_signature), -2)  # noqa: F841 — used in cache key
     hist = get_index_history(symbol=symbol, days=95)
     if hist is None or len(hist) < 30:
         return {"mu": 0.08, "sigma": 0.25, "start_value": None,
@@ -38,3 +39,16 @@ def get_mc_params(symbol: str = "^GSPC", spot_signature: float = 0.0) -> dict:
     sigma = float(np.std(returns, ddof=1)) * np.sqrt(252.0)
     return {"mu": mu, "sigma": sigma, "start_value": None,
             "source": "yfinance-60d"}
+
+
+# ═══════════════════════════════════════════════════════════════
+# CACHE ADAPTER — thin @st.cache_data wrapper
+# ═══════════════════════════════════════════════════════════════
+@st.cache_data(ttl=300, show_spinner=False)
+def get_mc_params(symbol: str = "^GSPC", spot_signature: float = 0.0) -> dict:
+    """Cached wrapper. Same signature, same return type as before.
+
+    NOTE: NEITHER param is underscore-prefixed so Streamlit hashes both —
+    critical for per-ticker cache separation.
+    """
+    return _fetch_mc_params(symbol, spot_signature)

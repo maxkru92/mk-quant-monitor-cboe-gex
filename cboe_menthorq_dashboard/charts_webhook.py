@@ -35,9 +35,8 @@ _REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from cboe_menthorq_dashboard.data_fetcher import LiveOptionsFetcher
-from cboe_menthorq_dashboard.gex_calculator import GEXCalculator
 from cboe_menthorq_dashboard.chart_generator import render_chart
+from cboe_menthorq_dashboard.gex_pipeline import GEXPipeline
 
 app = Flask(__name__)
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
@@ -103,22 +102,14 @@ def _render(symbol: str, spot) -> Response:
         return jsonify({"error": "missing required field 'symbol'"}), 400
     symbol = str(symbol).upper()
     try:
-        # Dashboard pipeline: fetch → compute → render
-        fetcher = LiveOptionsFetcher(symbol)
-        chain = fetcher.fetch_all_chains()
-        if spot is not None:
-            spot = float(spot)
-        else:
-            spot = fetcher.spot_price()
-        spot = float(spot)
-
-        gex = GEXCalculator(chain, spot)
-        by_strike = gex.gex_by_strike()
+        # Use the shared pipeline — fetch + compute in one call
+        result = GEXPipeline.run(symbol)
+        spot = float(spot) if spot is not None else result.spot
 
         from datetime import datetime
         png = render_chart(
             symbol=symbol,
-            by_strike=by_strike,
+            by_strike=result.by_strike,
             spot=spot,
             date_label=datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"),
         )

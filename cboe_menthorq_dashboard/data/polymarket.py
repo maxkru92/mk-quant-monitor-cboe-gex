@@ -9,6 +9,11 @@ Two public REST APIs (no API key required for read-only):
 - CLOB API  (https://clob.polymarket.com) — prices & orderbook
 
 All functions return graceful None/empty fallbacks.
+
+Architecture (2026-07 Candidate 3 — Cache-Seam Decoupling)
+----------------------------------------------------------
+Pure fetch (``_fetch_*``) — no Streamlit dependency, importable anywhere.
+Cache adapter (``get_*``) — thin ``@st.cache_data`` wrapper.
 """
 
 from __future__ import annotations
@@ -43,32 +48,23 @@ def _get_json(url: str, params: Optional[Dict[str, Any]] = None) -> Any:
         return None
 
 
-# ── Public API ───────────────────────────────────────────────────── #
+# ═══════════════════════════════════════════════════════════════
+# PURE FETCH FUNCTIONS — no Streamlit dependency
+# ═══════════════════════════════════════════════════════════════
 
-
-@st.cache_data(ttl=120, show_spinner=False)
-def get_active_markets(limit: int = 20) -> list:
-    """Get currently active prediction markets.
-
-    Returns list of dicts with keys:
-        ``id``, ``question``, ``outcomes``, ``volume``, ``liquidity``,
-        ``end_date``, ``active``, ``closed``, ``tags``.
-    """
+def _fetch_active_markets(limit: int = 20) -> list:
+    """Pure: Polymarket HTTP → list. No caching, no Streamlit."""
     data = _get_json(f"{GAMMA_BASE}/markets", {
         "limit": min(limit, 100), "closed": "false",
-        "tag": "crypto",  # default to crypto
+        "tag": "crypto",
     })
     if data is None:
         return []
     return data
 
 
-@st.cache_data(ttl=120, show_spinner=False)
-def get_trending_markets(limit: int = 10) -> list:
-    """Get trending markets sorted by volume.
-
-    Returns list of dicts (same structure as active markets).
-    """
+def _fetch_trending_markets(limit: int = 10) -> list:
+    """Pure: Polymarket HTTP → list. No caching, no Streamlit."""
     data = _get_json(f"{GAMMA_BASE}/markets", {
         "limit": min(limit, 100), "closed": "false",
         "order_by": "volume", "ascending": "false",
@@ -78,33 +74,22 @@ def get_trending_markets(limit: int = 10) -> list:
     return data
 
 
-@st.cache_data(ttl=120, show_spinner=False)
-def get_market_details(market_id: str) -> Optional[dict]:
-    """Get detailed information about a specific market."""
+def _fetch_market_details(market_id: str) -> Optional[dict]:
+    """Pure: Polymarket HTTP → dict. No caching, no Streamlit."""
     data = _get_json(f"{GAMMA_BASE}/markets/{market_id}")
     if data is None:
         return None
     return data
 
 
-@st.cache_data(ttl=60, show_spinner=False)
-def get_market_prices(token_id: str) -> Optional[dict]:
-    """Get current prices for a market token.
-
-    Uses CLOB API ``/price`` endpoint.
-
-    Returns dict with ``price`` (string), ``volume``, ``timestamp``.
-    """
+def _fetch_market_prices(token_id: str) -> Optional[dict]:
+    """Pure: CLOB HTTP → dict. No caching, no Streamlit."""
     data = _get_json(f"{CLOB_BASE}/price", {"token_id": token_id})
     return data
 
 
-@st.cache_data(ttl=120, show_spinner=False)
-def search_markets(keyword: str, limit: int = 15) -> list:
-    """Search markets by keyword.
-
-    Returns list of dicts.
-    """
+def _fetch_search_markets(keyword: str, limit: int = 15) -> list:
+    """Pure: Polymarket HTTP → list. No caching, no Streamlit."""
     data = _get_json(f"{GAMMA_BASE}/markets/search", {
         "term": keyword, "limit": min(limit, 50),
         "closed": "false",
@@ -114,14 +99,9 @@ def search_markets(keyword: str, limit: int = 15) -> list:
     return data
 
 
-@st.cache_data(ttl=300, show_spinner=False)
-def get_crypto_snapshot() -> dict:
-    """Key crypto/prediction-market indicators.
-
-    Returns dict with:
-        ``trending_markets`` (list), ``active_count`` (int),
-        ``top_volume`` (dict: market question → volume), ``source``.
-    """
+def _fetch_crypto_snapshot() -> dict:
+    """Pure computation on cached data — calls CACHED get_active_markets
+    and get_trending_markets for intra-request cache reuse."""
     active = get_active_markets(20)
     trending = get_trending_markets(10)
 
@@ -139,13 +119,8 @@ def get_crypto_snapshot() -> dict:
     }
 
 
-@st.cache_data(ttl=300, show_spinner=False)
-def get_events(limit: int = 10) -> list:
-    """Get crypto events (higher-level grouping of markets).
-
-    Returns list of dicts with keys:
-        ``id``, ``title``, ``markets``, ``volume``, ``liquidity``.
-    """
+def _fetch_events(limit: int = 10) -> list:
+    """Pure: Polymarket HTTP → list. No caching, no Streamlit."""
     data = _get_json(f"{GAMMA_BASE}/events", {
         "limit": min(limit, 50), "closed": "false",
         "tag": "crypto",
@@ -153,3 +128,49 @@ def get_events(limit: int = 10) -> list:
     if data is None:
         return []
     return data
+
+
+# ═══════════════════════════════════════════════════════════════
+# CACHE ADAPTERS — thin @st.cache_data wrappers
+# ═══════════════════════════════════════════════════════════════
+
+@st.cache_data(ttl=120, show_spinner=False)
+def get_active_markets(limit: int = 20) -> list:
+    """Cached wrapper. Same signature, same return type as before."""
+    return _fetch_active_markets(limit)
+
+
+@st.cache_data(ttl=120, show_spinner=False)
+def get_trending_markets(limit: int = 10) -> list:
+    """Cached wrapper. Same signature, same return type as before."""
+    return _fetch_trending_markets(limit)
+
+
+@st.cache_data(ttl=120, show_spinner=False)
+def get_market_details(market_id: str) -> Optional[dict]:
+    """Cached wrapper. Same signature, same return type as before."""
+    return _fetch_market_details(market_id)
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def get_market_prices(token_id: str) -> Optional[dict]:
+    """Cached wrapper. Same signature, same return type as before."""
+    return _fetch_market_prices(token_id)
+
+
+@st.cache_data(ttl=120, show_spinner=False)
+def search_markets(keyword: str, limit: int = 15) -> list:
+    """Cached wrapper. Same signature, same return type as before."""
+    return _fetch_search_markets(keyword, limit)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def get_crypto_snapshot() -> dict:
+    """Cached wrapper. Same signature, same return type as before."""
+    return _fetch_crypto_snapshot()
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def get_events(limit: int = 10) -> list:
+    """Cached wrapper. Same signature, same return type as before."""
+    return _fetch_events(limit)

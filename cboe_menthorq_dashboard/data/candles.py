@@ -6,6 +6,11 @@ Public API
 ----------
 ``get_volatility_candles(symbol, days)``
     Return ``(DataFrame(t, open, high, low, close, up), source)``.
+
+Architecture (2026-07 Candidate 3 — Cache-Seam Decoupling)
+----------------------------------------------------------
+Pure fetch (``_fetch_volatility_candles``) — no Streamlit dependency.
+Cache adapter (``get_volatility_candles``) — thin ``@st.cache_data`` wrapper.
 """
 
 from __future__ import annotations
@@ -16,13 +21,13 @@ import streamlit as st
 import yfinance as yf
 
 
-@st.cache_data(ttl=300, show_spinner=False)
-def get_volatility_candles(symbol: str = "^GSPC", days: int = 30):
-    """Return ``(df, source)`` where ``df`` has columns
-    ``t, open, high, low, close, up`` — last ``days`` rows.
+# ═══════════════════════════════════════════════════════════════
+# PURE FETCH — no Streamlit dependency, importable anywhere
+# ═══════════════════════════════════════════════════════════════
+def _fetch_volatility_candles(symbol: str = "^GSPC", days: int = 30):
+    """Pure: yfinance → pandas → return. No caching, no Streamlit.
 
-    Falls back to a deterministic placeholder (matching the original
-    volatility-chart.tsx algorithm) if yfinance errors out.
+    Falls back to a deterministic placeholder if yfinance errors out.
     """
     df = _try_yf_history(symbol, days=days + 5, interval="1d")
     if df is None:
@@ -37,6 +42,15 @@ def get_volatility_candles(symbol: str = "^GSPC", days: int = 30):
     })
     df["up"] = df["close"] >= df["open"]
     return df, "yfinance"
+
+
+# ═══════════════════════════════════════════════════════════════
+# CACHE ADAPTER — thin @st.cache_data wrapper
+# ═══════════════════════════════════════════════════════════════
+@st.cache_data(ttl=300, show_spinner=False)
+def get_volatility_candles(symbol: str = "^GSPC", days: int = 30):
+    """Cached wrapper. Same signature, same return type as before."""
+    return _fetch_volatility_candles(symbol, days)
 
 
 # ── internal helpers ────────────────────────────────────────────────── #

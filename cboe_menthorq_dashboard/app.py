@@ -24,10 +24,7 @@ _repo_root = str(Path(__file__).resolve().parent.parent)
 if _repo_root not in sys.path:
     sys.path.insert(0, _repo_root)
 
-from cboe_menthorq_dashboard.data_fetcher import LiveOptionsFetcher, fetch_ticker_info
-from cboe_menthorq_dashboard.greeks import add_greeks_to_chain
-from cboe_menthorq_dashboard.gex_calculator import GEXCalculator
-from cboe_menthorq_dashboard.menthorq_formatter import MenthorQString
+from cboe_menthorq_dashboard.gex_pipeline import GEXPipeline
 from cboe_menthorq_dashboard.ui.theme import inject_css
 from cboe_menthorq_dashboard.ui.chrome import render_market_clock
 from cboe_menthorq_dashboard.tabs import (
@@ -68,58 +65,18 @@ inject_css()
 # ------------------------------------------------------------------ #
 @st.cache_data(ttl=300, show_spinner=False)
 def load_data(symbol: str, risk_free_rate: float = 0.045, dividend_yield: float = 0.0):
-    """Fetch and process all data for a given symbol."""
-    fetcher = LiveOptionsFetcher(symbol)
-    info = fetch_ticker_info(symbol)
-    spot = info["spot"]
-
-    # Fetch options chain (CBOE provides Greeks natively)
-    chain = fetcher.fetch_all_chains()
-
-    # Validate required columns for GEX calculation
-    required_cols = {"strike", "type", "open_interest", "gamma"}
-    missing = required_cols - set(chain.columns)
-    if missing:
-        raise ValueError(f"Options chain is missing required columns: {missing}")
-
-    # If CBOE Greeks are missing, calculate via Black-Scholes
-    greek_cols = ["delta", "gamma", "theta", "vega", "rho"]
-    if not all(col in chain.columns and chain[col].notna().any() for col in greek_cols):
-        chain = add_greeks_to_chain(
-            chain,
-            spot=spot,
-            risk_free_rate=risk_free_rate,
-            dividend_yield=dividend_yield,
-        )
-
-    # GEX calculations
-    gex_calc = GEXCalculator(chain, spot)
-    chain_gex = gex_calc.calculate_gex()
-    levels = gex_calc.levels(chain_gex)
-    levels_0dte = gex_calc.levels_0dte(chain_gex)
-
-    # 1D expected move
-    move, min_1d, max_1d = gex_calc.expected_move_1d()
-
-    # MenthorQ string
-    mq = MenthorQString(
-        symbol=symbol,
-        spot=spot,
-        levels=levels,
-        levels_0dte=levels_0dte,
-        min_1d=min_1d,
-        max_1d=max_1d,
-    )
-
+    """Fetch and process all data for a given symbol — delegates to GEXPipeline."""
+    result = GEXPipeline.run(symbol, risk_free_rate, dividend_yield)
     return {
-        "info": info,
-        "spot": spot,
-        "chain": chain_gex,
-        "levels": levels,
-        "levels_0dte": levels_0dte,
-        "min_1d": min_1d,
-        "max_1d": max_1d,
-        "menthorq_string": mq.build(),
+        "info": result.info,
+        "spot": result.spot,
+        "chain": result.chain,
+        "by_strike": result.by_strike,
+        "levels": result.levels,
+        "levels_0dte": result.levels_0dte,
+        "min_1d": result.min_1d,
+        "max_1d": result.max_1d,
+        "menthorq_string": result.menthorq_string,
     }
 
 
@@ -334,7 +291,7 @@ def main():
     # Charts tab — institutional 3-panel GEX chart with fallback
     # ------------------------------------------------------------------ #
     with tab_charts:
-        charts.render(chain=chain, spot=spot, symbol=symbol)
+        charts.render(chain=chain, spot=spot, symbol=symbol, by_strike=data.get("by_strike"))
 
 
 if __name__ == "__main__":

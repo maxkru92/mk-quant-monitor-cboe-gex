@@ -13,6 +13,11 @@ All functions return graceful None/empty fallbacks when the API key
 is missing or the request fails.
 
 FRED API docs: https://fred.stlouisfed.org/docs/api/fred/
+
+Architecture (2026-07 Candidate 3 — Cache-Seam Decoupling)
+----------------------------------------------------------
+Pure fetch (``_fetch_*``) — no Streamlit dependency, importable anywhere.
+Cache adapter (``get_*``) — thin ``@st.cache_data`` wrapper.
 """
 
 from __future__ import annotations
@@ -86,19 +91,18 @@ def is_available() -> bool:
     return bool(FRED_API_KEY)
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
-def get_series_observations(
+# ═══════════════════════════════════════════════════════════════
+# PURE FETCH FUNCTIONS — no Streamlit dependency
+# ═══════════════════════════════════════════════════════════════
+
+def _fetch_series_observations(
     series_id: str,
     observation_start: Optional[str] = None,
     observation_end: Optional[str] = None,
     sort_order: str = "desc",
     limit: int = 1000,
 ) -> pd.DataFrame:
-    """Fetch time-series observations for a FRED series.
-
-    Returns DataFrame with columns ``date`` (datetime) and ``value`` (float).
-    Returns empty DataFrame on error.
-    """
+    """Pure: FRED HTTP → pandas → return. No caching, no Streamlit."""
     params: Dict[str, Any] = {
         "series_id": series_id,
         "sort_order": sort_order,
@@ -120,7 +124,7 @@ def get_series_observations(
     rows = []
     for o in obs:
         v = o.get("value", ".")
-        val = None if v in (".", "") else float(v)  # FRED uses "." for missing
+        val = None if v in (".", "") else float(v)
         rows.append({"date": o["date"], "value": val})
 
     df = pd.DataFrame(rows)
@@ -129,9 +133,8 @@ def get_series_observations(
     return df
 
 
-@st.cache_data(ttl=86400, show_spinner=False)
-def get_series_info(series_id: str) -> dict:
-    """Metadata for a FRED series (title, units, frequency, etc.)."""
+def _fetch_series_info(series_id: str) -> dict:
+    """Pure: FRED HTTP → dict. No caching, no Streamlit."""
     data = _get_json(f"{FRED_BASE}/series", {"series_id": series_id})
     if data is None:
         return {}
@@ -146,12 +149,8 @@ def get_series_info(series_id: str) -> dict:
     }
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
-def get_yield_curve() -> pd.DataFrame:
-    """Current US Treasury yield curve (1M through 30Y).
-
-    Returns DataFrame with columns ``maturity`` (str) and ``yield_pct`` (float).
-    """
+def _fetch_yield_curve() -> pd.DataFrame:
+    """Pure computation on cached data — calls CACHED get_series_observations."""
     rows = []
     for sid in YIELD_CURVE_SERIES:
         label = KEY_SERIES.get(sid, (sid, sid, ""))[1]
@@ -172,31 +171,20 @@ def get_yield_curve() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
-def get_macro_snapshot() -> dict:
-    """Key macro indicators at a glance.
-
-    Returns dict with keys for each major indicator:
-        ``fed_funds``, ``unemployment``, ``cpi_yoy``, ``core_pce``,
-        ``ten_year``, ``two_year``, ``ten_two_spread``, ``breakeven_10y``,
-        ``baa_spread``, ``recession_prob``, ``fed_balance_sheet``.
-    Each value is a dict with ``value``, ``date``, or None.
-    """
+def _fetch_macro_snapshot() -> dict:
+    """Pure computation on cached data — calls CACHED get_series_observations."""
     out: dict[str, Any] = {}
 
-    # Fed Funds Rate
     dff = get_series_observations("DFF", limit=5)
     if not dff.empty and dff["value"].notna().any():
         latest = dff.dropna(subset=["value"]).iloc[-1]
         out["fed_funds"] = {"value": float(latest["value"]), "date": latest["date"]}
 
-    # Unemployment Rate
     unrate = get_series_observations("UNRATE", limit=5)
     if not unrate.empty and unrate["value"].notna().any():
         latest = unrate.dropna(subset=["value"]).iloc[-1]
         out["unemployment"] = {"value": float(latest["value"]), "date": latest["date"]}
 
-    # CPI YoY (latest 13-month to compute YoY)
     cpi = get_series_observations("CPIAUCSL", limit=13, sort_order="desc")
     if not cpi.empty and len(cpi) >= 2:
         vals = cpi.dropna(subset=["value"])
@@ -206,7 +194,6 @@ def get_macro_snapshot() -> dict:
             out["cpi_yoy"] = {"value": round((current / prior - 1) * 100, 2),
                               "date": vals.iloc[0]["date"]}
 
-    # Core PCE YoY
     pce = get_series_observations("PCEPILFE", limit=13, sort_order="desc")
     if not pce.empty and len(pce) >= 2:
         vals = pce.dropna(subset=["value"])
@@ -216,7 +203,6 @@ def get_macro_snapshot() -> dict:
             out["core_pce"] = {"value": round((current / prior - 1) * 100, 2),
                                "date": vals.iloc[0]["date"]}
 
-    # Yield curve
     dgs10 = get_series_observations("DGS10", limit=5)
     dgs2 = get_series_observations("DGS2", limit=5)
     if not dgs10.empty and dgs10["value"].notna().any():
@@ -226,25 +212,21 @@ def get_macro_snapshot() -> dict:
         latest = dgs2.dropna(subset=["value"]).iloc[-1]
         out["two_year"] = {"value": float(latest["value"]), "date": latest["date"]}
 
-    # 10Y-2Y spread
     t10y2y = get_series_observations("T10Y2Y", limit=5)
     if not t10y2y.empty and t10y2y["value"].notna().any():
         latest = t10y2y.dropna(subset=["value"]).iloc[-1]
         out["ten_two_spread"] = {"value": float(latest["value"]), "date": latest["date"]}
 
-    # 10Y Breakeven Inflation
     be10 = get_series_observations("T10YIE", limit=5)
     if not be10.empty and be10["value"].notna().any():
         latest = be10.dropna(subset=["value"]).iloc[-1]
         out["breakeven_10y"] = {"value": float(latest["value"]), "date": latest["date"]}
 
-    # BAA-10Y spread
     baa = get_series_observations("BAA10Y", limit=5)
     if not baa.empty and baa["value"].notna().any():
         latest = baa.dropna(subset=["value"]).iloc[-1]
         out["baa_spread"] = {"value": float(latest["value"]), "date": latest["date"]}
 
-    # Fed Balance Sheet
     walcl = get_series_observations("WALCL", limit=5)
     if not walcl.empty and walcl["value"].notna().any():
         latest = walcl.dropna(subset=["value"]).iloc[-1]
@@ -254,12 +236,8 @@ def get_macro_snapshot() -> dict:
     return out
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
-def search_series(query: str, limit: int = 25) -> pd.DataFrame:
-    """Search FRED series by text query.
-
-    Returns DataFrame with columns: ``id``, ``title``, ``units``, ``frequency``.
-    """
+def _fetch_search_series(query: str, limit: int = 25) -> pd.DataFrame:
+    """Pure: FRED HTTP → pandas → return. No caching, no Streamlit."""
     data = _get_json(f"{FRED_BASE}/series/search", {
         "search_text": query, "limit": str(limit),
     })
@@ -274,3 +252,44 @@ def search_series(query: str, limit: int = 25) -> pd.DataFrame:
         "units": s.get("units", ""),
         "frequency": s.get("frequency", ""),
     } for s in series])
+
+
+# ═══════════════════════════════════════════════════════════════
+# CACHE ADAPTERS — thin @st.cache_data wrappers
+# ═══════════════════════════════════════════════════════════════
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_series_observations(
+    series_id: str,
+    observation_start: Optional[str] = None,
+    observation_end: Optional[str] = None,
+    sort_order: str = "desc",
+    limit: int = 1000,
+) -> pd.DataFrame:
+    """Cached wrapper. Same signature, same return type as before."""
+    return _fetch_series_observations(series_id, observation_start,
+                                      observation_end, sort_order, limit)
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def get_series_info(series_id: str) -> dict:
+    """Cached wrapper. Same signature, same return type as before."""
+    return _fetch_series_info(series_id)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_yield_curve() -> pd.DataFrame:
+    """Cached wrapper. Same signature, same return type as before."""
+    return _fetch_yield_curve()
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_macro_snapshot() -> dict:
+    """Cached wrapper. Same signature, same return type as before."""
+    return _fetch_macro_snapshot()
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def search_series(query: str, limit: int = 25) -> pd.DataFrame:
+    """Cached wrapper. Same signature, same return type as before."""
+    return _fetch_search_series(query, limit)

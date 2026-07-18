@@ -8,6 +8,11 @@ Public API
     Raw daily close history from yfinance. Returns ``DataFrame(t, close)`` or None.
 ``get_regime_data()``
     Compute regime from real ^GSPC history. Falls back to SPA-mode when yfinance fails.
+
+Architecture (2026-07 Candidate 3 — Cache-Seam Decoupling)
+----------------------------------------------------------
+Pure fetch (``_fetch_index_history``) — no Streamlit dependency.
+Cache adapter (``get_index_history``) — thin ``@st.cache_data`` wrapper.
 """
 
 from __future__ import annotations
@@ -20,12 +25,11 @@ import yfinance as yf
 from cboe_menthorq_dashboard.data.candles import _try_yf_history
 
 
-# ── index history (shared with mc_params) ──────────────────────────── #
-
-
-@st.cache_data(ttl=300, show_spinner=False)
-def get_index_history(symbol: str = "^GSPC", days: int = 95):
-    """Raw daily close history from yfinance. Returns DataFrame(t, close) or None.
+# ═══════════════════════════════════════════════════════════════
+# PURE FETCH — no Streamlit dependency, importable anywhere
+# ═══════════════════════════════════════════════════════════════
+def _fetch_index_history(symbol: str = "^GSPC", days: int = 95):
+    """Pure: yfinance → pandas → return. No caching, no Streamlit.
 
     NOTE: ``symbol`` is intentionally NOT underscore-prefixed so Streamlit
     hashes it into the cache key — otherwise AAPL/BRK.A tabs would serve
@@ -37,6 +41,15 @@ def get_index_history(symbol: str = "^GSPC", days: int = 95):
     hist = hist.tail(days).reset_index(drop=True).rename(columns={"Date": "t"})
     return pd.DataFrame({"t": pd.to_datetime(hist["t"]),
                          "close": hist["Close"].astype(float)})
+
+
+# ═══════════════════════════════════════════════════════════════
+# CACHE ADAPTER — thin @st.cache_data wrapper
+# ═══════════════════════════════════════════════════════════════
+@st.cache_data(ttl=300, show_spinner=False)
+def get_index_history(symbol: str = "^GSPC", days: int = 95):
+    """Cached wrapper. Same signature, same return type as before."""
+    return _fetch_index_history(symbol, days)
 
 
 # ── regime classifier ───────────────────────────────────────────────── #

@@ -13,7 +13,7 @@ from cboe_menthorq_dashboard.gex_calculator import GEXCalculator
 from cboe_menthorq_dashboard.chart_generator import render_chart
 
 
-def render(chain, spot: float, symbol: str) -> None:
+def render(chain, spot: float, symbol: str, by_strike=None) -> None:
     """Render the Charts tab with institutional 3-panel GEX chart.
 
     Falls back to basic ``st.bar_chart`` when the institutional renderer
@@ -27,10 +27,14 @@ def render(chain, spot: float, symbol: str) -> None:
         Current spot price.
     symbol : str
         Ticker symbol (e.g. ``"SPX"``, ``"SPY"``).
+    by_strike : pd.DataFrame, optional
+        Pre-computed GEX-by-strike (from ``GEXPipeline.run()``).
+        If None, computes it from ``chain`` (backward-compatible).
     """
     st.subheader("Institutional GEX Profile")
-    gex_calc = GEXCalculator(chain, spot)
-    by_strike = gex_calc.gex_by_strike()
+    if by_strike is None:
+        gex_calc = GEXCalculator(chain, spot)
+        by_strike = gex_calc.gex_by_strike()
     try:
         png_bytes = render_chart(
             symbol=symbol,
