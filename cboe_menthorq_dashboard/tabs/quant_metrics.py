@@ -311,9 +311,8 @@ def render_regime_detection(_chain=None) -> None:
     # (see data/regime.py docstring). We trim price_path to align the arrays.
     n = min(len(macros), len(price_path))
     if n <= 0:
-        # Defence-in-depth: if either list got cleared between the early-return
-        # guard and here (e.g. cache seam mutated, yfinance returned 0 rows),
-        # gracefully render the SPA matrix rather than crash with IndexError.
+        # Belt-and-suspenders: if either list is empty past the early-return guard,
+        # render the SPA matrix instead of crashing with IndexError.
         _render_regime_matrix_only(regime_data)
         return
     price_path = price_path[-n:]
