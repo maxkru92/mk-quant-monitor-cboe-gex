@@ -27,6 +27,7 @@ import logging
 import os
 import sys
 import traceback
+from datetime import datetime, timezone
 
 from flask import Flask, Response, request, jsonify
 
@@ -106,12 +107,11 @@ def _render(symbol: str, spot) -> Response:
         result = GEXPipeline.run(symbol)
         spot = float(spot) if spot is not None else result.spot
 
-        from datetime import datetime
         png = render_chart(
             symbol=symbol,
             by_strike=result.by_strike,
             spot=spot,
-            date_label=datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"),
+            date_label=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         )
         log.info("rendered %s (%d KiB)", symbol, len(png) // 1024)
         return Response(png, mimetype="image/png",

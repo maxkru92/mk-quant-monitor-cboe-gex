@@ -30,7 +30,7 @@ and the persona at /Users/maximiliankrupp/Documents/VolatilityVince/docs/SOUL.md
 from __future__ import annotations
 
 import io
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import numpy as np
@@ -226,7 +226,7 @@ def render_chart(
     if theme is None:
         theme = "GAMMA EXPOSURE PROFILE — DARK INSTITUTIONAL"
     if date_label is None:
-        date_label = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+        date_label = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     key_data = {
         "date":        date_label,
         "analyst":     "Volatility Vince",

@@ -4,9 +4,9 @@ Charts tab — institutional 3-panel GEX chart with fallback
 
 from __future__ import annotations
 
-import datetime as dt
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
-import pytz
 import streamlit as st
 
 from cboe_menthorq_dashboard.gex_calculator import GEXCalculator
@@ -36,11 +36,13 @@ def render(chain, spot: float, symbol: str, by_strike=None) -> None:
         gex_calc = GEXCalculator(chain, spot)
         by_strike = gex_calc.gex_by_strike()
     try:
+        _london = datetime.now(ZoneInfo("Europe/London"))
+        _date_label = f"{_london.strftime('%Y-%m-%d %H:%M')} {_london.tzname()}"
         png_bytes = render_chart(
             symbol=symbol,
             by_strike=by_strike,
             spot=spot,
-            date_label=dt.datetime.now(pytz.timezone("Europe/London")).strftime("%Y-%m-%d %H:%M BST"),
+            date_label=_date_label,
         )
         st.image(png_bytes, width='stretch')
     except Exception as chart_err:
