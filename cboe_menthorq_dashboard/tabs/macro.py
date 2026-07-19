@@ -48,10 +48,10 @@ def _fmt_pct(v, sign: bool = True):
     if v is None:
         return "—"
     if v > 0:
-        return f"↑ +{v:.2f}%"
+        return f"+{v:.2f}%"
     if v < 0:
-        return f"↓ {v:.2f}%"
-    return f"→ 0.00%"
+        return f"{v:.2f}%"
+    return f"0.00%"
 
 def _fmt_pct_colored(v, sign: bool = True):
     """HTML-colored % delta (for inline ст.markdown contexts only).
@@ -147,7 +147,7 @@ def _render_stress_hero(spot) -> None:
     # (c) FRED partial-rate-limit, or (d) data fetch exception.
     reason = stress.get("_fallback_reason")
     if not live:
-        # Source != "fred" → full mock fallback. Branch on reason.
+        # Source != "fred"full mock fallback. Branch on reason.
         if reason and ("missing" in str(reason) or "exception" in str(reason)):
             st.warning(
                 f"**FRED API partial outage** (`{reason}`). Showing DEMO values "
@@ -163,10 +163,9 @@ def _render_stress_hero(spot) -> None:
             )
     elif reason and "fred_missing_1_of_3" in str(reason):
         st.info(
-            f"\u2139\ufe0f **FRED** — one of three stress inputs temporarily "
-            f"unavailable (`{reason}`). Score computed from the 2 live inputs; "
-            f"VIX and HY OAS dominate in this case.",
-            icon="ℹ\ufe0f",
+            f"\u2139\ufe0f **FRED \u2014 live data, one indicator temporarily unavailable** "
+            f"({reason}). The Macro Risk Score is approximate until it returns.",
+            icon="\u2139\ufe0f",
         )
 
     score = stress.get("risk_score")
@@ -222,7 +221,7 @@ def _render_volatility_options(spot) -> None:
     stress = mr.get_stress_snapshot()
     vol = mr.get_volatility_indices()
 
-    st.markdown(terminal_header("📈 Volatility & Options Real-Time Monitor"),
+    st.markdown(terminal_header("Volatility & Options Real-Time Monitor"),
                 unsafe_allow_html=True)
 
     c1, c2, c3 = st.columns(3)
@@ -341,7 +340,7 @@ def _render_credit_risk() -> None:
     credit = mr.get_credit_snapshot()
     cds = mr.get_synthetic_cds_sovereigns(credit.get("hy_oas"))
 
-    st.markdown(terminal_header("💳 Credit Risk · CDS · Sovereign Spreads"),
+    st.markdown(terminal_header("Credit Risk · CDS · Sovereign Spreads"),
                 unsafe_allow_html=True)
 
     # ── KPIs ──────────────────────────────────────────────────────── #
@@ -389,7 +388,7 @@ def _render_credit_risk() -> None:
 # SECTION 4 — EQUITY · BREADTH · SECTOR ROTATION
 # ────────────────────────────────────────────────────────────────────── #
 def _render_equity_breadth() -> None:
-    st.markdown(terminal_header("📊 Equity · Breadth · Sector Rotation"),
+    st.markdown(terminal_header("Equity · Breadth · Sector Rotation"),
                 unsafe_allow_html=True)
 
     syms = [s for s, _ in mr.EQUITY_INDICES]
@@ -508,7 +507,7 @@ def _render_equity_breadth() -> None:
 # SECTION 5 — FIXED INCOME, YIELD CURVE, MOVE INDEX
 # ────────────────────────────────────────────────────────────────────── #
 def _render_fixed_income() -> None:
-    st.markdown(terminal_header("🏦 Fixed Income · Yield Curve · MOVE"),
+    st.markdown(terminal_header("Fixed Income · Yield Curve · MOVE"),
                 unsafe_allow_html=True)
 
     # ── Yield curve (uses data.fred.get_yield_curve) ──────────────── #
@@ -624,7 +623,7 @@ def _render_fixed_income() -> None:
 # SECTION 6 — FX · COMMODITIES · EM · CRYPTO
 # ────────────────────────────────────────────────────────────────────── #
 def _render_fx_commodities_crypto() -> None:
-    st.markdown(terminal_header("🌍 FX · Commodities · Emerging Markets · Crypto"),
+    st.markdown(terminal_header("FX · Commodities · Emerging Markets · Crypto"),
                 unsafe_allow_html=True)
 
     all_syms = ([s for s, _ in mr.FX_MAJORS] +
@@ -723,7 +722,7 @@ def _render_fx_commodities_crypto() -> None:
 def _render_money_market() -> None:
     mm = mr.get_money_market_snapshot()
 
-    st.markdown(terminal_header("💰 Money Market Stress"),
+    st.markdown(terminal_header("Money Market Stress"),
                 unsafe_allow_html=True)
 
     effr = mm.get("effr"); sofr = mm.get("sofr"); rrp = mm.get("rrp")
@@ -879,12 +878,12 @@ def render(spot=None, chain=None) -> None:
     st.divider()
 
     tab_vola, tab_cred, tab_eq, tab_fi, tab_fx, tab_mm = st.tabs([
-        "📈 Volatility & Options",
-        "💳 Credit Risk",
-        "📊 Equity · Breadth · Sectors",
-        "🏦 Fixed Income · Yield · MOVE",
-        "🌍 FX · Commodities · Crypto",
-        "💰 Money Market",
+        "Volatility & Options",
+        "Credit Risk",
+        "Equity · Breadth · Sectors",
+        "Fixed Income · Yield · MOVE",
+        "FX · Commodities · Crypto",
+        "Money Market",
     ])
 
     with tab_vola:

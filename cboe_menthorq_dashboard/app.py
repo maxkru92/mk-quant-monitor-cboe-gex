@@ -109,7 +109,7 @@ def main():
         symbol = st.text_input("Ticker", value="SPX", max_chars=10).upper().strip()
         risk_free_rate = st.slider("Risk-free rate (%)", min_value=0.0, max_value=10.0, value=4.5, step=0.1) / 100.0
         dividend_yield = st.slider("Dividend yield (%)", min_value=0.0, max_value=10.0, value=0.0, step=0.1) / 100.0
-        refresh = st.button("🔄 Refresh Data")
+        refresh = st.button("Refresh Data")
         if refresh:
             st.cache_data.clear()
             st.rerun()
@@ -158,7 +158,7 @@ def main():
     # ═══════════════════════════════════════════════════════════════ #
     # MenthorQ string output + TradingView copy + download toolbar
     # ═══════════════════════════════════════════════════════════════ #
-    st.subheader("📋 MenthorQ Gamma Data String")
+    st.subheader("MenthorQ Gamma Data String")
 
     # Styled terminal-card around the code block
     st.markdown(
@@ -213,7 +213,7 @@ def main():
 
     with tcol2:
         st.download_button(
-            label="⬇️ Download .txt",
+            label="Download .txt",
             data=mq_string,
             file_name=f"{symbol}_menthorq.txt",
             mime="text/plain",
@@ -240,7 +240,7 @@ def main():
             "Quant Metrics",
             "Strategy + Monte Carlo",
             "Greeks",
-            "🎯 Macro Risk",
+            "Macro Risk",
             "Crypto",
             "Summary",
             "Options Chain",
