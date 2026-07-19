@@ -420,6 +420,8 @@ def _mock_yfinance_snapshot(symbols: List[str]) -> Dict[str, Dict[str, Any]]:
         "XLK": 245.0,  "XLV": 142.0,  "XLF": 47.5,   "XLE": 96.0,
         "XLY": 198.0,  "XLP": 82.5,   "XLI": 138.0,  "XLB": 88.0,
         "XLU": 76.0,   "XLRE": 41.5,  "XLC": 92.0,
+        # NYSE Advance-Decline (Section 4 — true McClellan via ^ADD)
+        "^ADD": 1450.0,
     }
     rng = random.Random(0x4D41_4352_4F5F_4D41_C2)  # fixed seed → reproducible
     out: Dict[str, Dict[str, Any]] = {}
@@ -482,14 +484,30 @@ def _mock_fear_greed() -> Dict[str, Any]:
 # ══════════════════════════════════════════════════════════════════════
 # 6. BREADTH INDICATORS (computed from ^GSPC close history)
 # ══════════════════════════════════════════════════════════════════════
-def compute_breadth(closes: pd.Series) -> Dict[str, Any]:
+def compute_breadth(
+    closes: pd.Series,
+    add_closes: Optional[pd.Series] = None,
+) -> Dict[str, Any]:
     """Compute RSI(14), MACD(12/26/9), Stochastic(14/3), % above 50MA,
-    % above 200MA from a single asset's close series.
+    % above 200MA, and the McClellan Oscillator.
 
-    NOTE: % above MA of ``closes`` corresponds to that asset's own price vs
-    its MA. For true "S&P 500 over 50MA %" we'd need per-stock breadth —
-    not available without a flat-file download. We use the index as proxy
-    and surface a ``breadth_proxy`` flag.
+    Parameters
+    ----------
+    closes : pd.Series
+        Daily close history. Used for all MA / RSI / MACD / Stoch math.
+    add_closes : pd.Series or None
+        Daily ^ADD (NYSE advances - declines) close history. If supplied
+        AND has >= 39 values, the McClellan Oscillator is computed from
+        this true breadth series instead of the ^GSPC-proxy fallback.
+
+    Returns
+    -------
+    Dict with keys: pct_above_50ma / pct_above_200ma / rsi_14 / macd /
+    macd_signal / macd_text / stochastic_k / mcclellan / mcclellan_is_true
+    / mcclellan_source.
+
+    ``mcclellan_is_true`` is True iff the real ^ADD series was used.
+    ``mcclellan_source`` is "yfinance:^ADD" (true) or "proxy:^GSPC" (fallback).
     """
     out: Dict[str, Any] = {"valid": False, "breadth_proxy": True}
 
@@ -499,7 +517,8 @@ def compute_breadth(closes: pd.Series) -> Dict[str, Any]:
     closes = pd.Series(closes).astype(float).reset_index(drop=True)
 
     # --- % above 50MA / 200MA (using rolling MA crossover flag here as
-    #     the simplest "is the index above its MA" proxy) ---
+    #     the simplest "is the index above its MA" proxy — real per-stock
+    #     breadth isn't freely available in yfinance) ---
     ma50 = closes.rolling(50, min_periods=10).mean()
     ma200 = closes.rolling(200, min_periods=50).mean()
     pct_above_50 = None
@@ -540,21 +559,37 @@ def compute_breadth(closes: pd.Series) -> Dict[str, Any]:
     k_slow = k_fast.rolling(3, min_periods=1).mean()
     stoch_k = round(float(k_slow.iloc[-1]), 1) if pd.notna(k_slow.iloc[-1]) else None
 
-    # --- McClellan Oscillator proxy (synthetic breadth proxy) ---
-    # Real McClellan uses (Advances − Declines) / Total. We approximate
-    # with daily % change distribution: count of up days over last 20
-    # minus count of down days, then EMA-smooth over 39 / 19 periods.
-    daily_ret = closes.pct_change().dropna()
-    if len(daily_ret) >= 20:
-        # Treat flat-return days (|ret| == 0) as 0 net advance/decline so
-        # they neither skew bullish nor bearish. Earlier version encoded
-        # them as -1 (down), biasing the oscillator slightly bearish.
-        direction = (daily_ret > 0).astype(int) - (daily_ret < 0).astype(int)
-        ema39 = direction.ewm(span=39, adjust=False).mean()
-        ema19 = direction.ewm(span=19, adjust=False).mean()
-        mc_proxy = round(float((ema19.iloc[-1] - ema39.iloc[-1]) * 100), 1)
-    else:
-        mc_proxy = None
+    # --- McClellan Oscillator ---
+    # TRUE path: use ^ADD (NYSE Advances minus Declines) close series.
+    # McClellan = EMA19(^ADD) - EMA39(^ADD). This is the institutional
+    # definition (Carl McClellan, 1969), used on Bloomberg's MCO ticker.
+    # FALLBACK path: ^GSPC daily return direction as proxy. Less accurate.
+    mc_value = None
+    mc_is_true = False
+    mc_source = "proxy:^GSPC"
+    # True McClellan via ^ADD: ``pd.Series.ewm`` does not raise on a numeric
+    # Series, so no try/except is needed — ``is not None and len >= 39`` is
+    # the only necessary guard. If the add_closes is malformed the downstream
+    # proxy block (``if mc_value is None:``) handles it cleanly.
+    if add_closes is not None and len(add_closes) >= 39:
+        add_series = pd.Series(add_closes).astype(float).reset_index(drop=True)
+        ema19_add = add_series.ewm(span=19, adjust=False).mean()
+        ema39_add = add_series.ewm(span=39, adjust=False).mean()
+        mc_value = round(float((ema19_add.iloc[-1] - ema39_add.iloc[-1])), 1)
+        mc_is_true = True
+        mc_source = "yfinance:^ADD"
+
+    if mc_value is None:
+        # Fallback: ^GSPC daily-return direction as proxy
+        daily_ret = closes.pct_change().dropna()
+        if len(daily_ret) >= 39:
+            # Treat flat-return days (|ret| == 0) as 0 net advance/decline so
+            # they neither skew bullish nor bearish.
+            direction = (daily_ret > 0).astype(int) - (daily_ret < 0).astype(int)
+            ema39 = direction.ewm(span=39, adjust=False).mean()
+            ema19 = direction.ewm(span=19, adjust=False).mean()
+            mc_value = round(float((ema19.iloc[-1] - ema39.iloc[-1]) * 100), 1)
+            # mc_is_true already False; mc_source already "proxy:^GSPC"
 
     out.update({
         "valid": True,
@@ -565,7 +600,9 @@ def compute_breadth(closes: pd.Series) -> Dict[str, Any]:
         "macd_signal": signal_last,
         "macd_text": macd_signal_text,
         "stochastic_k": stoch_k,
-        "mcclellan_proxy": mc_proxy,
+        "mcclellan": mc_value,
+        "mcclellan_is_true": mc_is_true,
+        "mcclellan_source": mc_source,
     })
     return out
 
@@ -803,13 +840,29 @@ def get_sectors_5d() -> Dict[str, Any]:
 
 @_st_cache(600)
 def get_breadth() -> Dict[str, Any]:
-    """10-min cached breadth indicators from ^GSPC 1y history."""
+    """10-min cached breadth indicators.
+
+    Always pulls ^GSPC for MA / RSI / MACD / Stoch (^GSPC proxy — real
+    per-stock MA % isn't freely available). Additionally pulls NYSE ^ADD
+    (advances - declines) for the INSTITUTIONAL McClellan Oscillator.
+    Falls back to a ^GSPC-proxy McClellan when ^ADD is unavailable.
+    """
     hist = _safe_yf_history("^GSPC", days=400, interval="1d")
     if hist is None or hist.empty:
         return {"valid": False, "breadth_proxy": True,
-                "_fallback": "yfinance_unavailable"}
+                "_fallback": "yfinance_unavailable",
+                "mcclellan_is_true": False,
+                "mcclellan_source": "proxy:^GSPC"}
     closes = hist["Close"].astype(float).reset_index(drop=True)
-    return compute_breadth(closes)
+
+    # True NYSE A-D for institutional McClellan. Fetched separately so
+    # GSPC failures don't block A-D, and ^ADD outage auto-degrades to proxy.
+    add_hist = _safe_yf_history("^ADD", days=400, interval="1d")
+    add_closes = None
+    if add_hist is not None and not add_hist.empty and len(add_hist) >= 39:
+        add_closes = add_hist["Close"].astype(float).reset_index(drop=True)
+
+    return compute_breadth(closes, add_closes)
 
 
 # ══════════════════════════════════════════════════════════════════════

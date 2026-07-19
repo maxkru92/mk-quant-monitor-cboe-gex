@@ -41,6 +41,25 @@ def _hex_to_rgba(hex_color: str, alpha: float = 0.10) -> str:
 
 
 def _fmt_pct(v, sign: bool = True):
+    """Plain-text % delta for dataframe cells (no HTML).
+
+    ↑ green +X.XX%   ↓ red -X.XX%   → dash for None.
+    """
+    if v is None:
+        return "—"
+    if v > 0:
+        return f"↑ +{v:.2f}%"
+    if v < 0:
+        return f"↓ {v:.2f}%"
+    return f"→ 0.00%"
+
+def _fmt_pct_colored(v, sign: bool = True):
+    """HTML-colored % delta (for inline ст.markdown contexts only).
+
+    Use _fmt_pct (plain) for cells inside st.dataframe to avoid needing
+    escape=False. _fmt_pct_colored is the one-trick HTML helper used in
+    KPI strip contexts where unsafe_allow_html=True is explicit.
+    """
     if v is None:
         return "—"
     arrow = "+" if (sign and v > 0) else ""
@@ -616,7 +635,9 @@ def _render_fx_commodities_crypto() -> None:
 
     def _tbl(rows):
         df = pd.DataFrame(rows)
-        st.markdown(df.to_html(escape=False, index=False), unsafe_allow_html=True)
+        # Use st.dataframe so we get row interactions + safe HTML escaping.
+        # The % Δ Today column comes pre-formatted by _fmt_pct with unicode arrows.
+        st.dataframe(df, width='stretch', hide_index=True)
 
     # FX Majors
     st.markdown(

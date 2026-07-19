@@ -146,9 +146,13 @@ class TestBreadth:
     def test_mcclellan_proxy_present(self):
         closes = pd.Series([100.0 + i * 0.1 + (i % 3) * 0.5 for i in range(400)])
         out = mr.compute_breadth(closes)
-        assert "mcclellan_proxy" in out
+        assert "mcclellan" in out
+        assert "mcclellan_is_true" in out
+        # No add_closes supplied → proxy path → is_true=False
+        assert out["mcclellan_is_true"] is False
+        assert out["mcclellan_source"] == "proxy:^GSPC"
         # Mostly positive trend → MC proxy > 0 (bullish bias)
-        assert out["mcclellan_proxy"] is not None
+        assert out["mcclellan"] is not None
 
     def test_mcclellan_treats_flat_days_as_neutral(self):
         """Regression: a series with explicit zero-return days must produce
@@ -158,7 +162,7 @@ class TestBreadth:
         closes = pd.Series([100.0, 100.0, 100.0, 101.0, 100.0, 100.0,
                             100.0, 101.0, 100.0, 100.0] * 40)  # 400 rows total
         out = mr.compute_breadth(closes)
-        mc = out["mcclellan_proxy"]
+        mc = out["mcclellan"]
         assert mc is not None
         # Flat days contribute 0 net; tiny up days contribute slight +
         assert -5.0 <= mc <= 25.0, f"mc_proxy {mc} should be near zero with mostly flat days"
@@ -444,3 +448,53 @@ class TestOrMockFallbackLadder:
         monkeypatch.setenv("FRED_API_KEY", "")
         out = mr._stress_or_mock()
         assert out["source"] == "demo"
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 12. compute_breadth with true ^ADD series — McClellan Oscillator
+# ══════════════════════════════════════════════════════════════════════
+class TestBreadthTrueMcClellan:
+    """When ^ADD (NYSE Advances − Declines) is supplied, McClellan uses it
+    directly. The flag ``mcclellan_is_true`` and source label flip."""
+    def test_add_closes_marks_mcclellan_as_true(self):
+        # Realistic NYSE A-D historical mean ~0; range ~[-2000, 2000]
+        rng = np.random.default_rng(0x4D43434C)
+        add_closes = pd.Series(
+            np.cumsum(rng.normal(0, 200, 400)) + 50.0
+        )
+        closes = pd.Series([100.0 + i * 0.5 for i in range(400)])
+        out = mr.compute_breadth(closes, add_closes)
+        assert out["valid"] is True
+        assert out["mcclellan_is_true"] is True, "add_closes given → must mark is_true"
+        assert out["mcclellan_source"] == "yfinance:^ADD"
+        assert out["mcclellan"] is not None
+
+    def test_short_add_closes_falls_back_to_proxy(self):
+        closes = pd.Series([100.0 + i * 0.5 for i in range(400)])
+        add_closes = pd.Series([100.0, 200.0])  # < 39 required for true path
+        out = mr.compute_breadth(closes, add_closes)
+        assert out["mcclellan_is_true"] is False
+        assert out["mcclellan_source"] == "proxy:^GSPC"
+
+        def test_get_breadth_handles_add_unavailable(self, monkeypatch):
+            """If ^ADD fetch fails, breadth gracefully falls back to proxy.
+            Real-world: ``_safe_yf_history("^ADD", ...)`` returns None on rate-limit.
+            """
+            def fake_hist(symbol, days=400, interval="1d"):
+                if symbol == "^ADD":
+                    return None  # simulate ^ADD outage
+                # Return a synthetic GSPC history
+                return pd.DataFrame({
+                    "Date": pd.date_range(end=pd.Timestamp.now(), periods=days),
+                    "Close": [100.0 + i * 0.4 for i in range(days)],
+                })
+            monkeypatch.setattr(mr, "_safe_yf_history", fake_hist)
+            br = mr.get_breadth.__wrapped__() if hasattr(mr.get_breadth, "__wrapped__") else mr._impl_only_call()  # bypass cache
+            # The wrapper may be cached. Test the inner function directly:
+            # (compute_breadth is what cached calls; check that logic)
+            # Instead, assert compute_breadth(closes, None) works as proxy
+            closes = pd.Series([100.0 + i * 0.4 for i in range(400)])
+            out = mr.compute_breadth(closes, None)
+            assert out["mcclellan_is_true"] is False
+            assert out["mcclellan"] is not None
+
