@@ -188,7 +188,8 @@ def _compute_slider_step(initial_spot: float) -> float:
     share the same numeric type. ``round(initial_spot * 0.001)`` returns
     ``int``, which would be rejected by the slider validation when
     ``min_value`` / ``max_value`` are floats (SPX @ $7,457.69 → step=7).
-    Force the cast to ``float`` here.
+    Force the cast to ``float`` here so SPX/NDX/VIX/RUT (all 4-figure
+    underlying spot prices) work without a type-mismatch error.
     """
     return float(max(1.0, round(initial_spot * 0.001)))
 
