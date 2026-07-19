@@ -202,7 +202,11 @@ def render_strategy_calculator(spot_default: float = 100.0) -> None:
     slider_step = max(1.0, round(initial_spot * 0.001))
     scaled_strategies = _build_strategies(scale)
 
-    _ensure_session_state(initial_key=st.session_state.strat_key,
+    # Use .get() instead of attribute access — on first run, st.session_state.strat_key
+    # does not exist yet (its initializer lives inside _ensure_session_state below).
+    # Attribute access st.session_state.X triggers __getattr__ and raises KeyError
+    # if the key is missing. Default "iron_condor" matches the function's own default.
+    _ensure_session_state(initial_key=st.session_state.get("strat_key", "iron_condor"),
                             spot=initial_spot)
 
     st.markdown(
