@@ -10,6 +10,7 @@ directly via ``httpx`` instead of the MCP protocol (works on Streamlit Cloud).
 
 from __future__ import annotations
 
+import logging
 import warnings
 from typing import Optional
 
@@ -19,11 +20,21 @@ import yfinance as yf
 from cboe_menthorq_dashboard.data import cboe_data
 
 warnings.filterwarnings("ignore")
+log = logging.getLogger(__name__)
 
 
 # ------------------------------------------------------------------ #
 # Public API
 # ------------------------------------------------------------------ #
+# Tickers whose prices come from CBOE / US index feeds; Yahoo Finance
+# stores them under a caret-prefixed namespace (^SPX, ^NDX, ...).
+# LiveOptionsFetcher must use the caret form for the yfinance fallback
+# chain or ``yf.Ticker("SPX").history(...)`` returns nothing.
+_YF_CARET_TICKERS = frozenset({
+    "SPX", "NDX", "RUT", "VIX", "DJX", "OEX", "XEO", "XSP",
+})
+
+
 class LiveOptionsFetcher:
     """Fetch live options data from CBOE via ``data.cboe_data``.
 
@@ -32,8 +43,14 @@ class LiveOptionsFetcher:
     """
 
     def __init__(self, symbol: str):
-        self.symbol = symbol.upper().strip()
-        self._ticker = yf.Ticker(self.symbol) if symbol else None
+        raw = (symbol or "").upper().strip()
+        self.symbol = raw
+        # CBOE understands "SPX" directly (it adds the caret itself for
+        # items in its index list); Yahoo Finance wants "^SPX".
+        # Keep both — CBOE calls use ``self.symbol``, yfinance uses
+        # ``self._yf_symbol``.
+        self._yf_symbol = f"^{raw}" if raw in _YF_CARET_TICKERS else raw
+        self._ticker = yf.Ticker(self._yf_symbol) if raw else None
 
     # ------------------------------------------------------------------ #
     # Spot price
@@ -49,35 +66,41 @@ class LiveOptionsFetcher:
         """
         # 1. CBOE ticker info (primary, from cboe_mcp extraction)
         try:
-            info = cboe_data.get_ticker_info(self.symbol)
-            if info.get("spot") is not None and info["spot"] > 0:
-                return float(info["spot"])
-        except Exception:
-            pass
+            info = cboe_data.get_ticker_info(self.symbol) or {}
+            spot = info.get("spot")
+            if spot and spot > 0:
+                log.debug("CBOE spot price for %s: %.2f", self.symbol, spot)
+                return float(spot)
+            log.debug("CBOE returned no spot for %s (keys=%s)",
+                      self.symbol, sorted(info.keys()))
+        except Exception as e:
+            log.warning("CBOE spot fetch failed for %s: %s", self.symbol, e)
 
         # 2–4. Yahoo Finance fallbacks
         if self._ticker is None:
             raise ValueError(f"Could not determine spot price for {self.symbol}")
+
         try:
             hist = self._ticker.history(period="5d", interval="1d")
-            if not hist.empty:
+            if not hist.empty and "Close" in hist.columns:
                 return float(hist["Close"].iloc[-1])
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("yfinance .history failed for %s: %s", self._yf_symbol, e)
+
         try:
             fast = self._ticker.fast_info
-            if fast is not None:
-                return float(fast.last_price)  # type: ignore
-        except Exception:
-            pass
+            if fast is not None and getattr(fast, "last_price", None):
+                return float(fast.last_price)  # type: ignore[arg-type]
+        except Exception as e:
+            log.debug("yfinance fast_info failed for %s: %s", self._yf_symbol, e)
+
         try:
             info = self._ticker.info or {}
-            if "regularMarketPrice" in info:
-                return float(info["regularMarketPrice"])
-            if "previousClose" in info:
-                return float(info["previousClose"])
-        except Exception:
-            pass
+            for key in ("regularMarketPrice", "previousClose"):
+                if info.get(key) is not None:
+                    return float(info[key])
+        except Exception as e:
+            log.debug("yfinance info failed for %s: %s", self._yf_symbol, e)
 
         raise ValueError(f"Could not determine spot price for {self.symbol}")
 
