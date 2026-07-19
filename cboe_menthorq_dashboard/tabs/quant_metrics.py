@@ -113,7 +113,7 @@ def render_vol_surface(spot_default: float = 100.0, chain=None) -> None:
             zaxis=dict(title=dict(text="IV %", font=dict(color="#e8eeff", size=11)),
                        backgroundcolor="#0b0f1e", gridcolor="#141c35", color="#e8eeff"),
         ),
-        margin=dict(l=80, r=80, t=40, b=50),
+        margin=dict(l=80, r=160, t=40, b=50),
         height=380,
         font=dict(family="JetBrains Mono", color="#e8eeff", size=10),
     )
