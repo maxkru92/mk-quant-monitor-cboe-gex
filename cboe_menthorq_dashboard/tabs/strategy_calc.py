@@ -417,7 +417,7 @@ def _render_payoff(legs, analysis, spot, slider_step) -> None:
     tickvals = [x_s + p * (x_e - x_s) for p in tick_pct]
 
     fig.update_xaxes(
-        range=[x_s, x_e],
+        automargin=True,         range=[x_s, x_e],
         tickvals=tickvals,
         ticktext=[f"${v:,.0f}" for v in tickvals],
         showgrid=True, gridcolor="rgba(255,255,255,0.05)",
@@ -426,8 +426,9 @@ def _render_payoff(legs, analysis, spot, slider_step) -> None:
         title=dict(text="Underlying price at expiry",
                    font=dict(color="rgba(255,255,255,0.55)", family="JetBrains Mono", size=10)),
     )
+
     fig.update_yaxes(
-        range=[-0.02, 1.02],
+        automargin=True,         range=[-0.02, 1.02],
         showgrid=True, gridcolor="rgba(255,255,255,0.05)",
         zeroline=False, color="#8090b0",
         tickfont=dict(family="JetBrains Mono", size=9, color="#8090b0"),
@@ -436,10 +437,11 @@ def _render_payoff(legs, analysis, spot, slider_step) -> None:
         title=dict(text="P&amp;L ($) — values via hover &amp; summary cards",
                    font=dict(color="rgba(255,255,255,0.55)", family="JetBrains Mono", size=10)),
     )
+
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="#0b0f1e",
-        margin=dict(l=12, r=12, t=12, b=12),
+        margin=dict(l=80, r=50, t=40, b=50),
         height=320,
         font=dict(family="JetBrains Mono"),
         showlegend=False,
@@ -598,24 +600,26 @@ def render_monte_carlo(spot_default: float = 100.0) -> None:
     )
 
     fig.update_xaxes(
-        showgrid=True, gridcolor="rgba(255,255,255,0.05)",
+        automargin=True,         showgrid=True, gridcolor="rgba(255,255,255,0.05)",
         zeroline=False, color="#8090b0",
         tickfont=dict(family="JetBrains Mono", size=9, color="#8090b0"),
         title=dict(text="Trading days",
                    font=dict(color="rgba(255,255,255,0.55)", family="JetBrains Mono", size=10)),
     )
+
     fig.update_yaxes(
-        showgrid=True, gridcolor="rgba(255,255,255,0.05)",
+        automargin=True,         showgrid=True, gridcolor="rgba(255,255,255,0.05)",
         zeroline=False, color="#8090b0",
         tickfont=dict(family="JetBrains Mono", size=9, color="#8090b0"),
         tickformat="$,.0f",
         title=dict(text="Portfolio value",
                    font=dict(color="rgba(255,255,255,0.55)", family="JetBrains Mono", size=10)),
     )
+
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="#0b0f1e",
-        margin=dict(l=12, r=12, t=12, b=12),
+        margin=dict(l=80, r=50, t=40, b=50),
         height=380,
         font=dict(family="JetBrains Mono"),
         legend=dict(

@@ -368,7 +368,7 @@ def _render_payoff(S, K, premium, opt_type) -> None:
         ))
 
     fig.update_xaxes(
-        range=[start, end],
+        automargin=True,         range=[start, end],
         tickvals=tickvals, ticktext=ticktext,
         showgrid=True, gridcolor="rgba(255,255,255,0.05)",
         zeroline=False, color="#8090b0",
@@ -376,8 +376,9 @@ def _render_payoff(S, K, premium, opt_type) -> None:
         title=dict(text="Underlying price at expiry",
                    font=dict(color="rgba(255,255,255,0.55)", family="JetBrains Mono", size=10)),
     )
+
     fig.update_yaxes(
-        range=[-0.02, 1.02],
+        automargin=True,         range=[-0.02, 1.02],
         showgrid=True, gridcolor="rgba(255,255,255,0.05)",
         zeroline=False, color="#8090b0",
         tickfont=dict(family="JetBrains Mono", size=9, color="#8090b0"),
@@ -386,10 +387,11 @@ def _render_payoff(S, K, premium, opt_type) -> None:
         title=dict(text="P&amp;L ($) — values via hover (B/E marked)",
                    font=dict(color="rgba(255,255,255,0.55)", family="JetBrains Mono", size=10)),
     )
+
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="#0b0f1e",
-        margin=dict(l=12, r=12, t=12, b=12),
+        margin=dict(l=80, r=50, t=40, b=50),
         height=300,
         font=dict(family="JetBrains Mono"),
         showlegend=False,

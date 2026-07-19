@@ -162,11 +162,11 @@ def _render_stress_hero(spot) -> None:
                 icon="🔑",
             )
     elif reason and "fred_missing_1_of_3" in str(reason):
-        st.warning(
-            f"**FRED partial data** (`{reason}`). The Macro Risk Score may "
-            f"under-count the missing indicator. Showing live data — consider "
-            f"checking FRED API status if missing persists.",
-            icon="⚠",
+        st.info(
+            f"\u2139\ufe0f **FRED** — one of three stress inputs temporarily "
+            f"unavailable (`{reason}`). Score computed from the 2 live inputs; "
+            f"VIX and HY OAS dominate in this case.",
+            icon="ℹ\ufe0f",
         )
 
     score = stress.get("risk_score")
@@ -492,11 +492,11 @@ def _render_equity_breadth() -> None:
     fig.add_vline(x=0, line=dict(color="rgba(255,255,255,0.20)", width=1))
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="#0b0f1e",
-        margin=dict(l=8, r=8, t=8, b=8), height=320,
-        xaxis=dict(gridcolor="rgba(255,255,255,0.04)", color="#8090b0",
+        margin=dict(l=200, r=60, t=40, b=50), height=320,
+        xaxis=dict(automargin=True,gridcolor="rgba(255,255,255,0.04", color="#8090b0",
                    tickfont=dict(family="JetBrains Mono", size=9, color="#8090b0"),
                    title=dict(text="5-day %", font=dict(color="rgba(255,255,255,0.55)", size=10))),
-        yaxis=dict(gridcolor="rgba(255,255,255,0.04)", color="#8090b0",
+        yaxis=dict(automargin=True,gridcolor="rgba(255,255,255,0.04", color="#8090b0",
                    tickfont=dict(family="JetBrains Mono", size=10, color="#ffffff")),
         font=dict(family="JetBrains Mono"),
     )
@@ -560,11 +560,11 @@ def _render_fixed_income() -> None:
         ))
         fig.update_layout(
             paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="#0b0f1e",
-            margin=dict(l=8, r=8, t=8, b=8), height=280,
-            xaxis=dict(title=dict(text="Maturity", font=dict(color="rgba(255,255,255,0.55)", size=10)),
+            margin=dict(l=80, r=50, t=40, b=50), height=280,
+            xaxis=dict(automargin=True,title=dict(text="Maturity", font=dict(color="rgba(255,255,255,0.55", size=10)),
                        gridcolor="rgba(255,255,255,0.04)", color="#8090b0",
                        tickfont=dict(family="JetBrains Mono", size=9, color="#8090b0")),
-            yaxis=dict(title=dict(text="Yield %", font=dict(color="rgba(255,255,255,0.55)", size=10)),
+            yaxis=dict(automargin=True,title=dict(text="Yield %", font=dict(color="rgba(255,255,255,0.55", size=10)),
                        gridcolor="rgba(255,255,255,0.04)", color="#8090b0",
                        tickfont=dict(family="JetBrains Mono", size=9, color="#8090b0"),
                        zerolinecolor="#2a3456"),
@@ -609,10 +609,10 @@ def _render_fixed_income() -> None:
                   annotation_font=dict(color="#fb7185", size=9, family="JetBrains Mono"))
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="#0b0f1e",
-        margin=dict(l=8, r=8, t=8, b=8), height=220,
-        xaxis=dict(gridcolor="rgba(255,255,255,0.04)", color="#8090b0",
+        margin=dict(l=80, r=50, t=40, b=50), height=220,
+        xaxis=dict(automargin=True,gridcolor="rgba(255,255,255,0.04", color="#8090b0",
                    tickfont=dict(family="JetBrains Mono", size=9, color="#8090b0")),
-        yaxis=dict(gridcolor="rgba(255,255,255,0.04)", color="#8090b0",
+        yaxis=dict(automargin=True,gridcolor="rgba(255,255,255,0.04", color="#8090b0",
                    tickfont=dict(family="JetBrains Mono", size=9, color="#8090b0"),
                    zerolinecolor="#2a3456"),
         font=dict(family="JetBrains Mono"),
@@ -851,10 +851,10 @@ def _plot_money_market_history(mm) -> None:
 
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="#0b0f1e",
-        margin=dict(l=8, r=8, t=8, b=8), height=320,
-        xaxis=dict(gridcolor="rgba(255,255,255,0.04)", color="#8090b0",
+        margin=dict(l=80, r=50, t=40, b=50), height=320,
+        xaxis=dict(automargin=True,gridcolor="rgba(255,255,255,0.04", color="#8090b0",
                    tickfont=dict(family="JetBrains Mono", size=9, color="#8090b0")),
-        yaxis=dict(gridcolor="rgba(255,255,255,0.04)", color="#8090b0",
+        yaxis=dict(automargin=True,gridcolor="rgba(255,255,255,0.04", color="#8090b0",
                    tickfont=dict(family="JetBrains Mono", size=9, color="#8090b0"),
                    zerolinecolor="#2a3456"),
         legend=dict(font=dict(color="#8090b0", size=9, family="JetBrains Mono"),

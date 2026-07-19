@@ -77,14 +77,14 @@ def _render_volume_chart() -> None:
     ))
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="#0b0f1e",
-        margin=dict(l=8, r=8, t=8, b=8), height=320,
-        xaxis=dict(
-            title=dict(text="Volume ($M)", font=dict(color="rgba(255,255,255,0.55)", size=10)),
+        margin=dict(l=80, r=50, t=40, b=50), height=320,
+        xaxis=dict(automargin=True,
+            title=dict(text="Volume ($M", font=dict(color="rgba(255,255,255,0.55)", size=10)),
             gridcolor="rgba(255,255,255,0.04)", color="#8090b0",
             tickfont=dict(family="JetBrains Mono", size=9, color="#8090b0"),
         ),
-        yaxis=dict(
-            gridcolor="rgba(255,255,255,0.04)", color="#8090b0",
+        yaxis=dict(automargin=True,
+            gridcolor="rgba(255,255,255,0.04", color="#8090b0",
             tickfont=dict(family="JetBrains Mono", size=9, color="#8090b0"),
         ),
         font=dict(family="JetBrains Mono"),

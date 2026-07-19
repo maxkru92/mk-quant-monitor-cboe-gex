@@ -106,14 +106,14 @@ def render_vol_surface(spot_default: float = 100.0, chain=None) -> None:
         plot_bgcolor="#0b0f1e",
         scene=dict(
             bgcolor="#0b0f1e",
-            xaxis=dict(title=dict(text="Strike", font=dict(color="#e8eeff", size=11)),
+            xaxis=dict(automargin=True,title=dict(text="Strike", font=dict(color="#e8eeff", size=11)),
                        backgroundcolor="#0b0f1e", gridcolor="#141c35", color="#e8eeff"),
-            yaxis=dict(title=dict(text="Years", font=dict(color="#e8eeff", size=11)),
+            yaxis=dict(automargin=True,title=dict(text="Years", font=dict(color="#e8eeff", size=11)),
                        backgroundcolor="#0b0f1e", gridcolor="#141c35", color="#e8eeff"),
             zaxis=dict(title=dict(text="IV %", font=dict(color="#e8eeff", size=11)),
                        backgroundcolor="#0b0f1e", gridcolor="#141c35", color="#e8eeff"),
         ),
-        margin=dict(l=0, r=0, b=0, t=10),
+        margin=dict(l=80, r=80, t=40, b=50),
         height=380,
         font=dict(family="JetBrains Mono", color="#e8eeff", size=10),
     )
@@ -229,14 +229,14 @@ def render_volatility_chart(_chain=None) -> None:  # chain kwarg kept for symmet
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="#0b0f1e",
-        margin=dict(l=8, r=8, t=8, b=8),
+        margin=dict(l=80, r=50, t=40, b=50),
         height=220,
-        xaxis=dict(
+        xaxis=dict(automargin=True,
             gridcolor="rgba(255,255,255,0.04)", color="#8090b0",
             tickfont=dict(family="JetBrains Mono", size=9, color="#8090b0"),
             rangeslider=dict(visible=False),
         ),
-        yaxis=dict(
+        yaxis=dict(automargin=True,
             gridcolor="rgba(255,255,255,0.04)", color="#8090b0",
             tickfont=dict(family="JetBrains Mono", size=9, color="#8090b0"),
         ),
@@ -370,15 +370,15 @@ def render_regime_detection(_chain=None) -> None:
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="#0b0f1e",
-        margin=dict(l=8, r=8, t=8, b=8),
+        margin=dict(l=80, r=50, t=40, b=50),
         height=280,
-        xaxis=dict(
+        xaxis=dict(automargin=True,
             title=None, gridcolor="rgba(255,255,255,0.05)",
             zerolinecolor="#2a3456", color="#8090b0",
             tickfont=dict(family="JetBrains Mono", size=9, color="#8090b0"),
             tickmode="array", tickvals=tick_idx, ticktext=tick_labels,
         ),
-        yaxis=dict(
+        yaxis=dict(automargin=True,
             gridcolor="rgba(255,255,255,0.05)", color="#8090b0",
             tickfont=dict(family="JetBrains Mono", size=9, color="#8090b0"),
             range=[y_min, y_max],
