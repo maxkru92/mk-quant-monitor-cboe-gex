@@ -106,13 +106,19 @@ def render_vol_surface(spot_default: float = 100.0, chain=None) -> None:
         plot_bgcolor="#0b0f1e",
         scene=dict(
             bgcolor="#0b0f1e",
-            xaxis=dict(automargin=True,title=dict(text="Strike", font=dict(color="#e8eeff", size=11)),
+            xaxis=dict(title=dict(text="Strike", font=dict(color="#e8eeff", size=11)),
                        backgroundcolor="#0b0f1e", gridcolor="#141c35", color="#e8eeff"),
-            yaxis=dict(automargin=True,title=dict(text="Years", font=dict(color="#e8eeff", size=11)),
+            yaxis=dict(title=dict(text="Years", font=dict(color="#e8eeff", size=11)),
                        backgroundcolor="#0b0f1e", gridcolor="#141c35", color="#e8eeff"),
             zaxis=dict(title=dict(text="IV %", font=dict(color="#e8eeff", size=11)),
                        backgroundcolor="#0b0f1e", gridcolor="#141c35", color="#e8eeff"),
         ),
+        # CRITICAL: do NOT set automargin=True on any of the above scene.xaxis/yaxis/zaxis
+        # dicts. Plotly 3D scene axes explicitly REJECT this property and raise:
+        #   ValueError: Invalid property specified for object of type
+        #   plotly.graph_objs.layout.scene.XAxis: 'automargin'
+        # at fig.update_layout(...) time, crashing the dashboard at startup.
+        # For 2D layout (xaxis/yaxis below), automargin=True is valid.
         margin=dict(l=80, r=160, t=40, b=50),
         height=380,
         font=dict(family="JetBrains Mono", color="#e8eeff", size=10),
@@ -200,7 +206,7 @@ def render_volatility_chart(_chain=None) -> None:  # chain kwarg kept for symmet
     </div>
     <div style="font-family:JetBrains Mono,monospace;font-variant-numeric:tabular-nums;
                 font-size:0.75rem;color:{chg_color};">
-      {'▲' if chg >= 0 else '▼'} {abs(pct):.2f}% · {'+' if chg >= 0 else '-'}{abs(chg):.2f}
+      {'' if chg >= 0 else '▼'} {abs(pct):.2f}% · {'+' if chg >= 0 else '-'}{abs(chg):.2f}
     </div>
   </div>
 </div>

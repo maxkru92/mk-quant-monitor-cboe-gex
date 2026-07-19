@@ -138,7 +138,7 @@ def _render_stress_hero(spot) -> None:
     badge = live_badge("LIVE · FRED + yfinance") if live \
         else demo_badge("DEMO · NO FRED KEY — add `FRED_API_KEY` to secrets")
     st.markdown(
-        terminal_header("krupp · /macro-risk · 🎯 Macro Risk Monitor", badge),
+        terminal_header("krupp · /macro-risk · Macro Risk Monitor", badge),
         unsafe_allow_html=True,
     )
 
@@ -152,14 +152,14 @@ def _render_stress_hero(spot) -> None:
             st.warning(
                 f"**FRED API partial outage** (`{reason}`). Showing DEMO values "
                 f"to keep the Macro Risk Score accurate (avoids under-counting stress).",
-                icon="⚠",
+                icon="",
             )
         else:
             st.warning(
                 "**FRED API key missing.** Add `FRED_API_KEY` to "
                 "`.streamlit/secrets.toml` (local) **and** to your **Streamlit "
                 "Cloud app's Secrets** for live data. Showing DEMO values below.",
-                icon="🔑",
+                icon="",
             )
     elif reason and "fred_missing_1_of_3" in str(reason):
         st.info(
@@ -246,7 +246,7 @@ def _render_volatility_options(spot) -> None:
         '<div style="font-family:JetBrains Mono,monospace;font-size:0.55rem;'
         'letter-spacing:0.14em;color:rgba(255,255,255,0.45);'
         'text-transform:uppercase;font-weight:600;margin:8px 0 6px 0;">'
-        '⛓ SPX Gamma Exposure (Cboe-derived)</div>',
+        'SPX Gamma Exposure (Cboe-derived)</div>',
         unsafe_allow_html=True,
     )
     spx_spot = spot if spot is not None else 5945.0
@@ -287,7 +287,7 @@ def _render_volatility_options(spot) -> None:
         '<div style="font-family:JetBrains Mono,monospace;font-size:0.55rem;'
         'letter-spacing:0.14em;color:rgba(255,255,255,0.45);'
         'text-transform:uppercase;font-weight:600;margin:10px 0 6px 0;">'
-        '⚡ Options Flow Alerts (live-simulated)  '
+        'Options Flow Alerts (live-simulated)  '
         '<span style="color:rgba(255,255,255,0.30);">[SYNTH]</span></div>',
         unsafe_allow_html=True,
     )
@@ -369,7 +369,7 @@ def _render_credit_risk() -> None:
         '<div style="font-family:JetBrains Mono,monospace;font-size:0.55rem;'
         'letter-spacing:0.14em;color:rgba(255,255,255,0.45);'
         'text-transform:uppercase;font-weight:600;margin:14px 0 6px 0;">'
-        '🌍 Global CDS Indices & Sovereign Spreads  '
+        'Global CDS Indices & Sovereign Spreads  '
         '<span style="color:rgba(255,255,255,0.30);">[SYNTH]</span></div>',
         unsafe_allow_html=True,
     )
@@ -414,7 +414,7 @@ def _render_equity_breadth() -> None:
         '<div style="font-family:JetBrains Mono,monospace;font-size:0.55rem;'
         'letter-spacing:0.14em;color:rgba(255,255,255,0.45);'
         'text-transform:uppercase;font-weight:600;margin:14px 0 6px 0;">'
-        '📐 Breadth & Momentum (^GSPC proxy)</div>',
+        'Breadth & Momentum (^GSPC proxy)</div>',
         unsafe_allow_html=True,
     )
     br = mr.get_breadth()
@@ -451,7 +451,7 @@ def _render_equity_breadth() -> None:
         '<div style="font-family:JetBrains Mono,monospace;font-size:0.55rem;'
         'letter-spacing:0.14em;color:rgba(255,255,255,0.45);'
         'text-transform:uppercase;font-weight:600;margin:14px 0 6px 0;">'
-        '🔥 Sector Heatmap · 5-Day Performance</div>',
+        'Sector Heatmap · 5-Day Performance</div>',
         unsafe_allow_html=True,
     )
     sec = mr.get_sectors_5d()
@@ -577,7 +577,7 @@ def _render_fixed_income() -> None:
         '<div style="font-family:JetBrains Mono,monospace;font-size:0.55rem;'
         'letter-spacing:0.14em;color:rgba(255,255,255,0.45);'
         'text-transform:uppercase;font-weight:600;margin:8px 0 6px 0;">'
-        '📊 MOVE Index (proxy) — 6mo  '
+        'MOVE Index (proxy) — 6mo  '
         '<span style="color:rgba(255,255,255,0.30);">[SYNTH]</span></div>',
         unsafe_allow_html=True,
     )
@@ -643,7 +643,7 @@ def _render_fx_commodities_crypto() -> None:
         '<div style="font-family:JetBrains Mono,monospace;font-size:0.55rem;'
         'letter-spacing:0.14em;color:rgba(255,255,255,0.45);'
         'text-transform:uppercase;font-weight:600;margin:6px 0 6px 0;">'
-        '💱 Major FX Pairs</div>',
+        'Major FX Pairs</div>',
         unsafe_allow_html=True,
     )
     rows = []
@@ -659,7 +659,7 @@ def _render_fx_commodities_crypto() -> None:
         '<div style="font-family:JetBrains Mono,monospace;font-size:0.55rem;'
         'letter-spacing:0.14em;color:rgba(255,255,255,0.45);'
         'text-transform:uppercase;font-weight:600;margin:14px 0 6px 0;">'
-        '🌏 Emerging Markets FX</div>',
+        'Emerging Markets FX</div>',
         unsafe_allow_html=True,
     )
     rows = []
@@ -675,7 +675,7 @@ def _render_fx_commodities_crypto() -> None:
         '<div style="font-family:JetBrains Mono,monospace;font-size:0.55rem;'
         'letter-spacing:0.14em;color:rgba(255,255,255,0.45);'
         'text-transform:uppercase;font-weight:600;margin:14px 0 6px 0;">'
-        '⛏️ Commodities</div>',
+        'Commodities</div>',
         unsafe_allow_html=True,
     )
     rows = []
@@ -745,7 +745,7 @@ def _render_money_market() -> None:
     rrp_d_color = "#34d399" if rrp_d is not None and rrp_d < -50 else \
                   ("#fbbf24" if rrp_d is not None and abs(rrp_d) < 50 else
                    ("#fb7185" if rrp_d is not None and rrp_d > 50 else "#8090b0"))
-    rrp_d_arrow = "↓" if rrp_d is not None and rrp_d < 0 else ("↑" if rrp_d is not None else "")
+    rrp_d_arrow = "" if rrp_d is not None and rrp_d < 0 else ("↑" if rrp_d is not None else "")
     c4.markdown(_kpi_card("RRP Δ WoW",
                           f"{rrp_d_arrow}${abs(rrp_d):.1f}B" if rrp_d is not None else "—",
                           rrp_d_color, "", "5-trading-day Δ"),
@@ -756,7 +756,7 @@ def _render_money_market() -> None:
         '<div style="font-family:JetBrains Mono,monospace;font-size:0.55rem;'
         'letter-spacing:0.14em;color:rgba(255,255,255,0.45);'
         'text-transform:uppercase;font-weight:600;margin:14px 0 6px 0;">'
-        '📐 Spreads vs IORB (4.40%)</div>',
+        'Spreads vs IORB (4.40%)</div>',
         unsafe_allow_html=True,
     )
     c1, c2, c3 = st.columns(3)
@@ -771,7 +771,7 @@ def _render_money_market() -> None:
                           "", "Within ±15 bps = normal"),
                 unsafe_allow_html=True)
     color_total = "#34d399" if normal else "#fb7185"
-    tick = "✓" if normal else "✗"
+    tick = "" if normal else "✗"
     c3.markdown(
         f"""
 <div class="vc-card" style="padding:10px 12px;margin:0;border-left:3px solid {color_total};">
@@ -795,7 +795,7 @@ def _render_money_market() -> None:
         '<div style="font-family:JetBrains Mono,monospace;font-size:0.55rem;'
         'letter-spacing:0.14em;color:rgba(255,255,255,0.45);'
         'text-transform:uppercase;font-weight:600;margin:14px 0 6px 0;">'
-        '📈 Historical Money-Market Spreads — 6mo  '
+        'Historical Money-Market Spreads — 6mo  '
         '<span style="color:rgba(255,255,255,0.30);">[derived from current]</span></div>',
         unsafe_allow_html=True,
     )

@@ -539,7 +539,7 @@ def render_monte_carlo(spot_default: float = 100.0) -> None:
             horizontal=True, label_visibility="collapsed",
         )
     with controls[2]:
-        if st.button("▶ Run (re-seed)", type="primary", width='stretch'):
+        if st.button("Run (re-seed)", type="primary", width='stretch'):
             st.session_state.mc_seed = int(np.random.default_rng().integers(0, 2**31 - 1))
     with controls[3]:
         st.markdown(

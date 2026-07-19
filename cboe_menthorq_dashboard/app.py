@@ -49,7 +49,7 @@ warnings.filterwarnings("ignore")
 # ------------------------------------------------------------------ #
 st.set_page_config(
     page_title="Krupp Capital Quant Dashboard - powered by CBOE Data",
-    page_icon="📊",
+    page_icon="",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -194,16 +194,16 @@ def main():
 <button id="{copy_btn_id}"
         onclick="var btn=this; navigator.clipboard.writeText(`{js_safe}`)
             .then(function() {{
-                btn.innerHTML='✅ Copied!';
+                btn.innerHTML='Copied!';
                 btn.style.background='rgba(0,230,118,0.12)';
                 setTimeout(function() {{
-                    btn.innerHTML='📋 Copy to TradingView';
+                    btn.innerHTML='Copy to TradingView';
                     btn.style.background='#0b0f1e';
                 }}, 2200);
             }})
             .catch(function() {{
-                btn.innerHTML='⚠️ Select text & Cmd+C';
-                setTimeout(function() {{ btn.innerHTML='📋 Copy to TradingView'; }}, 3000);
+                btn.innerHTML='Select text & Cmd+C';
+                setTimeout(function() {{ btn.innerHTML='Copy to TradingView'; }}, 3000);
             }});">
     📋 Copy to TradingView
 </button>
