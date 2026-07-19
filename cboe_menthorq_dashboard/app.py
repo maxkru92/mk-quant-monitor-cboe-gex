@@ -240,7 +240,7 @@ def main():
             "Quant Metrics",
             "Strategy + Monte Carlo",
             "Greeks",
-            "Macro",
+            "🎯 Macro Risk",
             "Crypto",
             "Summary",
             "Options Chain",

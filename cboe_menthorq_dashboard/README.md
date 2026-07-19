@@ -61,6 +61,61 @@ No secrets are needed — CBOE delayed quotes and yfinance are unauthenticated f
 - `AAPL`, `TSLA`, `NVDA` — single names
 - `VIX` — volatility index
 
+
+## 🔑 FRED API Key — Setup for Live Macro Data
+
+The **🎯 Macro Risk Monitor** tab pulls live data from FRED (Federal Reserve
+Economic Data) using VIX, OFR FSI, HY/IG OAS, EFFR, SOFR, RRP, yield curve
+and other series. Without a key, the dashboard renders realistic synthetic
+DEMO values so it never crashes.
+
+### Where the key is read from
+
+Resolution order (first non-empty wins):
+
+1. **`st.secrets["FRED_API_KEY"]`** — Streamlit-managed secret storage
+2. **`FRED_API_KEY`** OS env var — useful for CI / shell-driven runs
+3. `""` (empty) — triggers DEMO fallback throughout the tab
+
+### Local development
+
+The repo ships with a gitignored `cboe_menthorq_dashboard/.streamlit/secrets.toml`:
+
+```toml
+FRED_API_KEY = "your-fred-api-key-here"
+```
+
+`st.secrets` reads this file automatically when you run
+`streamlit run cboe_menthorq_dashboard/app.py` locally.
+
+📥 **Get a free key** at <https://fred.stlouisfed.org/docs/api/api_key.html>.
+
+### 🎯 Streamlit Cloud deployment
+
+**Important**: Streamlit Cloud does **NOT** read the
+`.streamlit/secrets.toml` from your repo. You must paste the key into the
+Streamlit Cloud Secrets panel yourself:
+
+1. Open <https://share.streamlit.io/>
+2. Click your app → **⋮ → Settings → Secrets**
+3. Paste the following (no `key =` prefix in this UI):
+
+   ```toml
+   FRED_API_KEY = "your-fred-api-key-here"
+   ```
+
+4. Click **Save** → the app auto-reboots and `LIVE · FRED` badges appear
+   in place of `DEMO` badges across all 7 macro sections.
+
+### What changes when the key is live?
+
+* All KPI strips show real values (VIX ≈14.6, HY OAS ≈3.20%, EFFR ≈4.58%)
+* The composite Macro Risk Score (top-left) computes from real data
+* Spread panels (CDS, Sovereign, Money-Market) show real FRED territories
+* The badge header reads `LIVE · FRED + yfinance` instead of `DEMO`
+* Synthetic panels (CDS, Sovereign, MOVE, Options Flow) stay tagged
+  `[SYNTH]` — these require paid data feeds; mock approximations only.
+
 ## Data sources (real, live)
 
 - **CBOE delayed quotes** (`cboe_data` endpoint) — primary data source for spot price, full options chain, Greeks, IV, OI, volume. Standard ~15-minute delay (industry standard for free tier).

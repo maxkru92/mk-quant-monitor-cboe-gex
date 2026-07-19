@@ -11,3 +11,15 @@ venv/
 .DS_Store
 *.log
 .venv_test/
+
+# Secrets — NEVER commit. Streamlit Cloud reads secrets only via the
+# share.streamlit.io UI; locally we use .streamlit/secrets.toml which
+# has the same TOML syntax as st.secrets.
+.streamlit/secrets.toml
+**/secrets.toml
+*.secrets.toml
+
+# Real-data dumps sometimes produced by experimental notebooks
+*.dump
+*.pickle
+

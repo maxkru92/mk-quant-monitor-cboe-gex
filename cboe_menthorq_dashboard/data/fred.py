@@ -31,8 +31,24 @@ import streamlit as st
 
 # ── Config ───────────────────────────────────────────────────────── #
 FRED_BASE = "https://api.stlouisfed.org/fred"
-FRED_API_KEY = os.getenv("FRED_API_KEY", "")
 REQUEST_TIMEOUT = 15.0
+
+
+def _resolve_api_key() -> str:
+    """Resolve the FRED API key from 1) ``st.secrets["FRED_API_KEY"]``,
+    2) ``FRED_API_KEY`` env var. Works outside a Streamlit runtime.
+    """
+    try:
+        import streamlit as st
+        v = st.secrets.get("FRED_API_KEY", "")
+        if v:
+            return str(v)
+    except Exception:
+        pass
+    return os.getenv("FRED_API_KEY", "")
+
+
+FRED_API_KEY = _resolve_api_key()
 
 # ── Well-known FRED series IDs ───────────────────────────────────── #
 # Format: (series_id, label, unit, description)
