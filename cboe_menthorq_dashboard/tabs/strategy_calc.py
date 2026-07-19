@@ -181,6 +181,18 @@ def run_mc(n_paths: int, horizon: int, mu: float, sigma: float,
 # ------------------------------------------------------------------ # \
 # Persistence: leg state must survive tab switches
 # ------------------------------------------------------------------ #
+def _compute_slider_step(initial_spot: float) -> float:
+    """Step size for the strategy-calculator spot-price slider.
+
+    Streamlit 1.59 requires ``min_value``, ``max_value`` and ``step`` to
+    share the same numeric type. ``round(initial_spot * 0.001)`` returns
+    ``int``, which would be rejected by the slider validation when
+    ``min_value`` / ``max_value`` are floats (SPX @ $7,457.69 → step=7).
+    Force the cast to ``float`` here.
+    """
+    return float(max(1.0, round(initial_spot * 0.001)))
+
+
 def _ensure_session_state(initial_key: str = "iron_condor", spot: float = 100.0) -> None:
     if "strat_key" not in st.session_state:
         st.session_state.strat_key = initial_key
@@ -200,7 +212,9 @@ def _ensure_session_state(initial_key: str = "iron_condor", spot: float = 100.0)
 def render_strategy_calculator(spot_default: float = 100.0) -> None:
     initial_spot = max(1.0, min(float(spot_default), 20000.0))
     scale = initial_spot / 100.0
-    slider_step = max(1.0, round(initial_spot * 0.001))
+    # Streamlit 1.59 requires min/max/step to share the same numeric type
+    # — ``_compute_slider_step`` returns float explicitly.
+    slider_step = _compute_slider_step(initial_spot)
     scaled_strategies = _build_strategies(scale)
 
     _ensure_session_state(initial_key=safe_get(st, "strat_key", "iron_condor"),
