@@ -152,14 +152,14 @@ def _render_stress_hero(spot) -> None:
             st.warning(
                 f"**FRED API partial outage** (`{reason}`). Showing DEMO values "
                 f"to keep the Macro Risk Score accurate (avoids under-counting stress).",
-                icon="",
+                icon="⚠",
             )
         else:
             st.warning(
                 "**FRED API key missing.** Add `FRED_API_KEY` to "
                 "`.streamlit/secrets.toml` (local) **and** to your **Streamlit "
                 "Cloud app's Secrets** for live data. Showing DEMO values below.",
-                icon="",
+                icon="🔑",
             )
     elif reason and "fred_missing_1_of_3" in str(reason):
         st.info(

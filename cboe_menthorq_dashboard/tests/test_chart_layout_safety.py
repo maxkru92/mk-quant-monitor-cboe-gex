@@ -169,3 +169,39 @@ def test_plotly_accepts_automargin_in_2d_axes():
     # If we got here without raising, the property is accepted on 2D axes.
     assert fig.layout.xaxis.automargin is True
     assert fig.layout.yaxis.automargin is True
+
+
+def test_icon_attributes_never_emptied():
+    """Regression: `page_icon=` / `icon=` / `icon_name=` attributes that
+    start with a literal Unicode emoji codepoint must NEVER be reduced
+    to an empty string. Functional indicators (favicon, Streamlit banner
+    icons) carry semantic meaning and must be preserved verbatim by any
+    future label-context emoji-strip pass.
+
+    Failure mode this guards against:
+        page_icon="\U0001F4CA"   →  page_icon=""
+    (audit pass treating `page_icon="..."` as a label-context string and
+    stripping the leading emoji).
+    """
+    import re as _re
+    files = _files_with_charts()
+    here = Path(__file__).parent
+    files.append(here.parent / "app.py")
+
+    icon_attr_re = _re.compile(r'(icon|page_icon|icon_name)\s*=\s*["\']([^"\']*)["\']')
+
+    offenders = []
+    for f in files:
+        text = f.read_text(encoding='utf-8')
+        for ln, line in enumerate(text.split('\n'), 1):
+            for m in icon_attr_re.finditer(line):
+                attr_name = m.group(1)
+                value = m.group(2)
+                # Rule 1: empty value is forbidden (we always want at least
+                # some indicator on these attributes).
+                if value == "":
+                    offenders.append(f.name + f":{ln}: {attr_name}= is empty (must not be stripped)")
+    assert not offenders, (
+        "Functional icon attributes must not be stripped to empty:\n"
+        + "\n".join(offenders)
+    )

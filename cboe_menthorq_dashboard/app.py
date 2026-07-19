@@ -49,7 +49,7 @@ warnings.filterwarnings("ignore")
 # ------------------------------------------------------------------ #
 st.set_page_config(
     page_title="Krupp Capital Quant Dashboard - powered by CBOE Data",
-    page_icon="",
+    page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded",
 )
