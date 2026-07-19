@@ -33,6 +33,7 @@ import streamlit as st
 
 from cboe_menthorq_dashboard.greeks import black_scholes_greeks
 from cboe_menthorq_dashboard.ui.chrome import terminal_header, live_badge, demo_badge
+from cboe_menthorq_dashboard.ui.session_state import safe_get
 from cboe_menthorq_dashboard.data import cboe_data
 
 
@@ -47,14 +48,15 @@ def render(spot_default: float = 100.0, chain=None) -> None:
     initial_sigma = float(cboe_data.get_atm_iv(chain, initial_spot)) if chain is not None else 0.30
     sigma_source = "cboe" if (chain is not None and initial_sigma > 0) else "fallback"
 
-    for k, v in {
+    _DEFAULTS_GK = {
         "gk_S":     initial_spot,
         "gk_K":     initial_k,
         "gk_T":     0.25,
         "gk_r":     0.04,
         "gk_sigma": initial_sigma,
         "gk_type":  "call",
-    }.items():
+    }
+    for k, v in _DEFAULTS_GK.items():
         if k not in st.session_state:
             st.session_state[k] = v
 
@@ -108,7 +110,7 @@ def render(spot_default: float = 100.0, chain=None) -> None:
             val = st.slider(
                 sym,
                 min_value=float(lo), max_value=float(hi), step=float(step),
-                value=float(st.session_state[f"gk_{sym}"]),
+                value=float(safe_get(st, f"gk_{sym}", _DEFAULTS_GK[f"gk_{sym}"])),
                 key=f"gk_slider_{sym}",
                 label_visibility="collapsed",
             )
@@ -125,23 +127,23 @@ def render(spot_default: float = 100.0, chain=None) -> None:
         toggles = st.columns(2)
         if toggles[0].button(
             "CALL",
-            type="primary" if st.session_state.gk_type == "call" else "secondary",
+            type="primary" if safe_get(st, "gk_type", "call") == "call" else "secondary",
             width='stretch',
         ):
             st.session_state.gk_type = "call"
         if toggles[1].button(
             "PUT",
-            type="primary" if st.session_state.gk_type == "put" else "secondary",
+            type="primary" if safe_get(st, "gk_type", "call") == "put" else "secondary",
             width='stretch',
         ):
             st.session_state.gk_type = "put"
 
-    S = st.session_state.gk_S
-    K = st.session_state.gk_K
-    T = st.session_state.gk_T
-    r = st.session_state.gk_r
-    sigma = st.session_state.gk_sigma
-    opt_type = st.session_state.gk_type
+    S = safe_get(st, "gk_S", _DEFAULTS_GK["gk_S"])
+    K = safe_get(st, "gk_K", _DEFAULTS_GK["gk_K"])
+    T = safe_get(st, "gk_T", _DEFAULTS_GK["gk_T"])
+    r = safe_get(st, "gk_r", _DEFAULTS_GK["gk_r"])
+    sigma = safe_get(st, "gk_sigma", _DEFAULTS_GK["gk_sigma"])
+    opt_type = safe_get(st, "gk_type", _DEFAULTS_GK["gk_type"])
 
     g = black_scholes_greeks(S, K, T, r, sigma,
                              option_type=("Call" if opt_type == "call" else "Put"))

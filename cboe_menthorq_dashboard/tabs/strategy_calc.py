@@ -29,6 +29,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from cboe_menthorq_dashboard.ui.chrome import terminal_header, live_badge, demo_badge
+from cboe_menthorq_dashboard.ui.session_state import safe_get
 from cboe_menthorq_dashboard.data.mc_params import get_mc_params
 
 
@@ -202,11 +203,7 @@ def render_strategy_calculator(spot_default: float = 100.0) -> None:
     slider_step = max(1.0, round(initial_spot * 0.001))
     scaled_strategies = _build_strategies(scale)
 
-    # Use .get() instead of attribute access — on first run, st.session_state.strat_key
-    # does not exist yet (its initializer lives inside _ensure_session_state below).
-    # Attribute access st.session_state.X triggers __getattr__ and raises KeyError
-    # if the key is missing. Default "iron_condor" matches the function's own default.
-    _ensure_session_state(initial_key=st.session_state.get("strat_key", "iron_condor"),
+    _ensure_session_state(initial_key=safe_get(st, "strat_key", "iron_condor"),
                             spot=initial_spot)
 
     st.markdown(
@@ -219,7 +216,7 @@ def render_strategy_calculator(spot_default: float = 100.0) -> None:
 
     pill_cols = st.columns(8)
     for i, key in enumerate(scaled_strategies.keys()):
-        active = (key == st.session_state.strat_key)
+        active = (key == safe_get(st, "strat_key", ""))
         label = scaled_strategies[key].name
         if pill_cols[i].button(
             label,
@@ -247,7 +244,7 @@ def render_strategy_calculator(spot_default: float = 100.0) -> None:
         spot = st.slider(
             "S",
             min_value=1.0, max_value=20000.0, step=slider_step,
-            value=float(st.session_state.strat_spot),
+            value=float(safe_get(st, "strat_spot", initial_spot)),
             label_visibility="collapsed",
             key="strat_spot_slider",
         )
@@ -259,7 +256,7 @@ def render_strategy_calculator(spot_default: float = 100.0) -> None:
             unsafe_allow_html=True,
         )
 
-        for i, leg in enumerate(st.session_state.strat_legs):
+        for i, leg in enumerate(safe_get(st, "strat_legs", [])):
             border = "rgba(52,211,153,0.25)" if leg["type"] == "call" else "rgba(251,113,133,0.25)"
             bg = "rgba(52,211,153,0.04)" if leg["type"] == "call" else "rgba(251,113,133,0.04)"
             color = "#34d399" if leg["type"] == "call" else "#fb7185"
@@ -301,8 +298,9 @@ def render_strategy_calculator(spot_default: float = 100.0) -> None:
 
     legs = [
         Leg(strike=leg["strike"], premium=leg["premium"],
-            type=leg["type"], position=leg["position"], quantity=leg.get("quantity", 1))
-        for leg in st.session_state.strat_legs
+            type=leg["type"], position=leg["position"],            quantity=leg.get("quantity", 1))
+        for leg in safe_get(st, "strat_legs", [])
+
     ]
     analysis = analyse(legs, spot)
 
@@ -512,14 +510,14 @@ def render_monte_carlo(spot_default: float = 100.0) -> None:
     with controls[0]:
         n_label = st.radio(
             "Paths", [1000, 10000, 100000],
-            index=[1000, 10000, 100000].index(st.session_state.mc_n_paths),
+            index=[1000, 10000, 100000].index(safe_get(st, "mc_n_paths", 10000)),
             format_func=lambda v: f"{v//1000}K" if v < 1_000_000 else "100K",
             horizontal=True, label_visibility="collapsed",
         )
     with controls[1]:
         h_label = st.radio(
             "Horizon", [5, 20, 60],
-            index=[5, 20, 60].index(st.session_state.mc_horizon),
+            index=[5, 20, 60].index(safe_get(st, "mc_horizon", 20)),
             format_func=lambda v: f"{v}D",
             horizontal=True, label_visibility="collapsed",
         )
@@ -531,21 +529,21 @@ def render_monte_carlo(spot_default: float = 100.0) -> None:
             f'<div style="text-align:right;font-family:JetBrains Mono,monospace;'
             f'font-size:0.6rem;color:rgba(255,255,255,0.45);text-transform:uppercase;'
             f'letter-spacing:0.12em;padding-top:6px;">'
-            f'Seed {st.session_state.mc_seed % 100000} · '
+            f'Seed {safe_get(st, "mc_seed", 42) % 100000} · '
             f'μ={mu*100:+.2f}% · σ={sigma*100:.2f}% · $${start_value/1000:,.0f}K start</div>',
             unsafe_allow_html=True,
         )
 
-    if n_label != st.session_state.mc_n_paths:
+    if n_label != safe_get(st, "mc_n_paths", 10000):
         st.session_state.mc_n_paths = n_label
-    if h_label != st.session_state.mc_horizon:
+    if h_label != safe_get(st, "mc_horizon", 20):
         st.session_state.mc_horizon = h_label
 
-    result = run_mc(st.session_state.mc_n_paths, st.session_state.mc_horizon,
+    result = run_mc(safe_get(st, "mc_n_paths", 10000), safe_get(st, "mc_horizon", 20),
                     mu=mu, sigma=sigma, start_value=start_value,
-                    seed=st.session_state.mc_seed)
+                    seed=safe_get(st, "mc_seed", 42))
 
-    horizon = st.session_state.mc_horizon
+    horizon = safe_get(st, "mc_horizon", 20)
     days = np.arange(0, horizon + 1)
 
     fig = go.Figure()
