@@ -66,11 +66,17 @@ def test_no_automargin_in_scene_axes_anywhere():
     )
 
 
-def test_all_tab_labels_emoji_free():
-    """Regression: user requested removing emojis from tab labels and sub-tabs.
-    Every `st.tabs([...])` labeled string in production code should start
-    with an ASCII letter or whitelisted Punctuation (\u00b7, etc.) \u2014 not
-    an emoji codepoint.
+def test_all_visible_decorative_emojis_stripped():
+    """Regression: user requested removing emojis from tab titles and sub-tabs.
+    Every visible label-source in production code must start with an ASCII
+    letter or whitelisted Punctuation (e.g. \u00b7) \u2014 not an emoji codepoint.
+    Scope (broader than the user\'s narrow wording for safety):
+      - st.tabs([...]) arguments (top-level tabs + sub-tabs)
+      - terminal_header('...' ) titles (section dividers inside tabs)
+      - st.button('...' ) labels (e.g. Refresh Data)
+      - st.subheader('...' ) labels (e.g. MenthorQ Gamma Data String)
+    Preserved on purpose (functional indicators, not labels):
+      - st.info/warning(icon='...' ) banners, page_icon='...'
     """
     import unicodedata
 
